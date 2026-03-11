@@ -381,8 +381,10 @@ const DEFAULT_STYLE = "Pop";
 const INITIAL_ANALYSIS_MS = 4000;
 const STYLE_SWITCH_HOLD_MS = 1800;
 const STYLE_SWITCH_COOLDOWN_MS = 0;
-const STYLE_SWITCH_SCORE_GAP = 0.008;
+const STYLE_SWITCH_SCORE_GAP = 0.03;
 const STYLE_SWITCH_CANDIDATE_GRACE_MS = 500;
+const MIN_ANALYSIS_VISIBILITY = 0.42;
+const HARD_RESET_VISIBILITY = 0.25;
 
 const youtubeLibrary = window.DANCE_YOUTUBE_LIBRARY || {
   EDM: [],
@@ -470,6 +472,42 @@ function averageVisibility(points) {
 
 function distance(a, b) {
   return Math.hypot(a.x - b.x, a.y - b.y);
+}
+
+function copyPoint(point) {
+  return { x: point.x, y: point.y };
+}
+
+function normalizedDelta(current, previous, scale) {
+  if (!current || !previous) return 0;
+  return distance(current, previous) / Math.max(scale, 0.001);
+}
+
+function blendMetric(current, next, alpha) {
+  return current * (1 - alpha) + next * alpha;
+}
+
+function decayAnalysisMetrics(factor = 0.9) {
+  analysis.smoothedEnergy *= factor;
+  analysis.smoothedBounce *= factor;
+  analysis.smoothedOpenness *= factor;
+  analysis.smoothedTravel *= factor;
+  analysis.smoothedSymmetry *= factor;
+  analysis.smoothedCross *= factor;
+  analysis.smoothedVerticality *= factor;
+}
+
+function pruneLiveBuffer(now = performance.now()) {
+  analysis.liveBuffer = analysis.liveBuffer.filter((sample) => now - sample.time <= analysis.bufferWindowMs);
+  if (analysis.liveBuffer.length === 0) {
+    analysis.latestAggregate = null;
+  }
+}
+
+function updateMetricReadout(profile) {
+  energyStatus.textContent = `에너지 ${Math.round(clamp((profile?.smoothedEnergy || 0) * 100, 0, 100))}%`;
+  opennessValue.textContent = `${Math.round(clamp((profile?.smoothedOpenness || 0) * 100, 0, 100))}%`;
+  bounceValue.textContent = `${Math.round(clamp((profile?.smoothedBounce || 0) * 100, 0, 100))}%`;
 }
 
 function ccw(a, b, c) {
@@ -1377,72 +1415,159 @@ function similarityScore(features, target, weights) {
   return weightSum ? total / weightSum : 0;
 }
 
+function scoreRangeMatch(value, min, max, softness = 0.26) {
+  if (value >= min && value <= max) return 1;
+  const distanceToRange = value < min ? min - value : value - max;
+  return clamp(1 - distanceToRange / softness, 0, 1);
+}
+
+const STYLE_CLASSIFIERS = {
+  EDM: {
+    descriptor: "큰 에너지 / 점프성 움직임",
+    target: {
+      smoothedEnergy: 0.82,
+      smoothedBounce: 0.58,
+      smoothedOpenness: 0.68,
+      smoothedTravel: 0.38,
+      smoothedSymmetry: 0.46,
+      smoothedCross: 0.08,
+      smoothedVerticality: 0.66,
+    },
+    weights: {
+      smoothedEnergy: 1.45,
+      smoothedBounce: 1.2,
+      smoothedOpenness: 0.8,
+      smoothedTravel: 0.95,
+      smoothedSymmetry: 0.45,
+      smoothedCross: 0.35,
+      smoothedVerticality: 0.95,
+    },
+  },
+  Pop: {
+    descriptor: "중간 바운스 / 정돈된 안무",
+    target: {
+      smoothedEnergy: 0.5,
+      smoothedBounce: 0.34,
+      smoothedOpenness: 0.56,
+      smoothedTravel: 0.28,
+      smoothedSymmetry: 0.7,
+      smoothedCross: 0.06,
+      smoothedVerticality: 0.48,
+    },
+    weights: {
+      smoothedEnergy: 1.15,
+      smoothedBounce: 1.05,
+      smoothedOpenness: 0.85,
+      smoothedTravel: 0.75,
+      smoothedSymmetry: 1.15,
+      smoothedCross: 0.35,
+      smoothedVerticality: 0.65,
+    },
+  },
+  Waltz: {
+    descriptor: "부드럽고 열린 흐름",
+    target: {
+      smoothedEnergy: 0.24,
+      smoothedBounce: 0.14,
+      smoothedOpenness: 0.84,
+      smoothedTravel: 0.3,
+      smoothedSymmetry: 0.82,
+      smoothedCross: 0.04,
+      smoothedVerticality: 0.38,
+    },
+    weights: {
+      smoothedEnergy: 0.95,
+      smoothedBounce: 0.9,
+      smoothedOpenness: 1.4,
+      smoothedTravel: 0.75,
+      smoothedSymmetry: 1.2,
+      smoothedCross: 0.55,
+      smoothedVerticality: 0.45,
+    },
+  },
+};
+
 function classifyStyle(features = analysis) {
   const profile = {
     smoothedEnergy: clamp(features.smoothedEnergy, 0, 1),
     smoothedBounce: clamp(features.smoothedBounce, 0, 1),
     smoothedOpenness: clamp(features.smoothedOpenness, 0, 1),
+    smoothedTravel: clamp(features.smoothedTravel, 0, 1),
+    smoothedSymmetry: clamp(features.smoothedSymmetry, 0, 1),
+    smoothedCross: clamp(features.smoothedCross, 0, 1),
+    smoothedVerticality: clamp(features.smoothedVerticality, 0, 1),
   };
 
-  const weights = {
-    smoothedEnergy: 1.2,
-    smoothedBounce: 1.1,
-    smoothedOpenness: 1,
-  };
+  const motionSignal = clamp(
+    profile.smoothedEnergy * 0.46 +
+      profile.smoothedBounce * 0.2 +
+      profile.smoothedTravel * 0.22 +
+      profile.smoothedVerticality * 0.12,
+    0,
+    1
+  );
+  const hasWaltzShape =
+    profile.smoothedOpenness > 0.68 &&
+    profile.smoothedSymmetry > 0.58 &&
+    profile.smoothedCross < 0.38;
 
-  const targets = {
-    EDM: {
-      smoothedEnergy: 0.88,
-      smoothedBounce: 0.46,
-      smoothedOpenness: 0.7,
-    },
-    Pop: {
-      smoothedEnergy: 0.5,
-      smoothedBounce: 0.3,
-      smoothedOpenness: 0.56,
-    },
-    Waltz: {
-      smoothedEnergy: 0.18,
-      smoothedBounce: 0.08,
-      smoothedOpenness: 0.82,
-    },
-  };
-
-  if (profile.smoothedEnergy < 0.08 && profile.smoothedBounce < 0.05) {
+  if (motionSignal < 0.06 && !hasWaltzShape) {
     const fallbackStyle = playbackState.currentStyle || DEFAULT_STYLE;
     analysis.mood = fallbackStyle;
     analysis.motion = "Waiting for clearer movement";
     detectedMood.textContent = fallbackStyle;
     motionType.textContent = analysis.motion;
     moodStatus.textContent = `스타일: ${fallbackStyle}`;
-    energyStatus.textContent = `에너지 ${Math.round(profile.smoothedEnergy * 100)}%`;
-    opennessValue.textContent = `${Math.round(profile.smoothedOpenness * 100)}%`;
-    bounceValue.textContent = `${Math.round(clamp(profile.smoothedBounce * 900, 0, 100))}%`;
+    updateMetricReadout(profile);
     return { style: fallbackStyle, ranking: [[fallbackStyle, 0]] };
   }
 
-  const scores = {
-    EDM: similarityScore(profile, targets.EDM, weights),
-    Pop: similarityScore(profile, targets.Pop, weights),
-    Waltz: similarityScore(profile, targets.Waltz, weights),
-  };
+  const scores = Object.fromEntries(
+    Object.entries(STYLE_CLASSIFIERS).map(([style, config]) => {
+      let bonus = 0;
+
+      if (style === "EDM") {
+        bonus += scoreRangeMatch(profile.smoothedEnergy, 0.62, 1) * 0.08;
+        bonus += scoreRangeMatch(profile.smoothedBounce, 0.38, 1) * 0.06;
+        bonus += scoreRangeMatch(profile.smoothedVerticality, 0.48, 1) * 0.04;
+        bonus += scoreRangeMatch(profile.smoothedTravel, 0.18, 0.82) * 0.03;
+        bonus -= scoreRangeMatch(profile.smoothedEnergy, 0, 0.28, 0.18) * 0.1;
+        bonus -= profile.smoothedCross * 0.03;
+      }
+
+      if (style === "Pop") {
+        bonus += scoreRangeMatch(profile.smoothedEnergy, 0.28, 0.7) * 0.06;
+        bonus += scoreRangeMatch(profile.smoothedBounce, 0.18, 0.52) * 0.05;
+        bonus += scoreRangeMatch(profile.smoothedSymmetry, 0.52, 1) * 0.07;
+        bonus += scoreRangeMatch(profile.smoothedOpenness, 0.38, 0.72) * 0.03;
+        bonus -= scoreRangeMatch(profile.smoothedEnergy, 0.82, 1, 0.16) * 0.06;
+        bonus -= scoreRangeMatch(profile.smoothedOpenness, 0.82, 1, 0.18) * 0.04;
+      }
+
+      if (style === "Waltz") {
+        bonus += scoreRangeMatch(profile.smoothedOpenness, 0.68, 1) * 0.1;
+        bonus += scoreRangeMatch(profile.smoothedSymmetry, 0.58, 1) * 0.07;
+        bonus += scoreRangeMatch(profile.smoothedBounce, 0, 0.24, 0.2) * 0.05;
+        bonus += scoreRangeMatch(profile.smoothedTravel, 0.08, 0.46) * 0.03;
+        bonus += hasWaltzShape ? 0.06 : 0;
+        bonus -= scoreRangeMatch(profile.smoothedEnergy, 0.68, 1, 0.18) * 0.08;
+        bonus -= profile.smoothedCross * 0.07;
+      }
+
+      const score = clamp(similarityScore(profile, config.target, config.weights) + bonus, 0, 1.2);
+      return [style, score];
+    })
+  );
 
   const ranked = Object.entries(scores).sort((a, b) => b[1] - a[1]);
   const [style] = ranked[0];
-  const descriptors = {
-    EDM: "큰 에너지 / 드롭형 움직임",
-    Pop: "중간 바운스 / 대중적인 안무",
-    Waltz: "부드럽고 열린 흐름",
-  };
 
   analysis.mood = style;
-  analysis.motion = descriptors[style] || "Observed motion";
+  analysis.motion = STYLE_CLASSIFIERS[style]?.descriptor || "Observed motion";
   detectedMood.textContent = style;
   motionType.textContent = analysis.motion;
   moodStatus.textContent = `스타일: ${style}`;
-  energyStatus.textContent = `에너지 ${Math.round(features.smoothedEnergy * 100)}%`;
-  opennessValue.textContent = `${Math.round(features.smoothedOpenness * 100)}%`;
-  bounceValue.textContent = `${Math.round(clamp(features.smoothedBounce * 900, 0, 100))}%`;
+  updateMetricReadout(profile);
 
   return { style, ranking: ranked };
 }
@@ -1735,61 +1860,142 @@ function updateXPoseGesture(landmarks) {
 function updateAnalysis(landmarks) {
   const leftWrist = landmarks[15];
   const rightWrist = landmarks[16];
+  const leftElbow = landmarks[13];
+  const rightElbow = landmarks[14];
   const leftShoulder = landmarks[11];
   const rightShoulder = landmarks[12];
   const leftHip = landmarks[23];
   const rightHip = landmarks[24];
+  const leftKnee = landmarks[25];
+  const rightKnee = landmarks[26];
+  const leftAnkle = landmarks[27];
+  const rightAnkle = landmarks[28];
   const nose = landmarks[0];
 
-  const visibility = averageVisibility([leftWrist, rightWrist, leftShoulder, rightShoulder, leftHip, rightHip, nose]);
+  const visibility = averageVisibility([
+    leftWrist,
+    rightWrist,
+    leftElbow,
+    rightElbow,
+    leftShoulder,
+    rightShoulder,
+    leftHip,
+    rightHip,
+    leftKnee,
+    rightKnee,
+    leftAnkle,
+    rightAnkle,
+    nose,
+  ]);
   analysis.visibility = visibility;
   stabilityStatus.textContent = `포즈 안정도 ${Math.round(visibility * 100)}%`;
+  const now = performance.now();
+  pruneLiveBuffer(now);
+
+  if (visibility < MIN_ANALYSIS_VISIBILITY) {
+    analysis.previousSample = null;
+    decayAnalysisMetrics(visibility < HARD_RESET_VISIBILITY ? 0.82 : 0.92);
+    if (visibility < HARD_RESET_VISIBILITY) {
+      resetXPoseGesture();
+    }
+    return;
+  }
 
   const shoulderWidth = distance(leftShoulder, rightShoulder) || 0.001;
-  const armSpan = distance(leftWrist, rightWrist) / shoulderWidth;
-  const openness = clamp((armSpan - 0.8) / 2.4, 0, 1);
+  const hipWidth = distance(leftHip, rightHip) || shoulderWidth;
+  const shoulderCenterY = (leftShoulder.y + rightShoulder.y) / 2;
+  const hipCenterY = (leftHip.y + rightHip.y) / 2;
+  const torsoHeight = Math.max(Math.abs(hipCenterY - shoulderCenterY), 0.001);
+  const bodyScale = Math.max((shoulderWidth + hipWidth + torsoHeight) / 3, 0.001);
+  const wristSpan = distance(leftWrist, rightWrist) / shoulderWidth;
+  const elbowSpan = distance(leftElbow, rightElbow) / shoulderWidth;
+  const armReach =
+    (distance(leftShoulder, leftWrist) + distance(rightShoulder, rightWrist)) / (2 * bodyScale);
+  const openness = clamp((wristSpan * 0.55 + elbowSpan * 0.2 + armReach * 0.25 - 1.05) / 1.05, 0, 1);
   const bodyCenterX = (leftHip.x + rightHip.x + leftShoulder.x + rightShoulder.x) / 4;
+  const bodyCenterY = (leftHip.y + rightHip.y + leftShoulder.y + rightShoulder.y) / 4;
   const wristCenterX = (leftWrist.x + rightWrist.x) / 2;
-  const symmetry = clamp(1 - Math.abs(wristCenterX - bodyCenterX) * 4, 0, 1);
-  const wristCross = clamp((shoulderWidth * 0.55 - Math.abs(leftWrist.x - rightWrist.x)) / (shoulderWidth * 0.55), 0, 1);
-  const verticality = clamp((Math.max(leftShoulder.y, rightShoulder.y) - Math.min(leftWrist.y, rightWrist.y)) * 3.5, 0, 1);
+  const horizontalSymmetry = clamp(1 - Math.abs(wristCenterX - bodyCenterX) / (shoulderWidth * 1.15), 0, 1);
+  const heightSymmetry = clamp(1 - Math.abs(leftWrist.y - rightWrist.y) / torsoHeight, 0, 1);
+  const symmetry = clamp(horizontalSymmetry * 0.58 + heightSymmetry * 0.42, 0, 1);
+  const armsCrossed =
+    segmentsIntersect(leftShoulder, leftWrist, rightShoulder, rightWrist) ||
+    segmentsIntersect(leftElbow, leftWrist, rightElbow, rightWrist);
+  const wristsCompact = clamp(
+    (shoulderWidth * 0.6 - Math.abs(leftWrist.x - rightWrist.x)) / (shoulderWidth * 0.6),
+    0,
+    1
+  );
+  const wristCross = clamp((armsCrossed ? 0.58 : 0.08) + wristsCompact * (armsCrossed ? 0.42 : 0.18), 0, 1);
+  const wristLift = ((shoulderCenterY - leftWrist.y) + (shoulderCenterY - rightWrist.y)) / 2;
+  const verticality = clamp((wristLift / torsoHeight + 0.12) / 0.82, 0, 1);
 
-  const torsoCenterY = (leftHip.y + rightHip.y + leftShoulder.y + rightShoulder.y) / 4;
   let travel = 0;
-  let delta = 0;
+  let energy = 0;
   let bounce = 0;
 
   if (analysis.previousSample) {
-    delta =
-      Math.abs(leftWrist.x - analysis.previousSample.leftWrist.x) +
-      Math.abs(leftWrist.y - analysis.previousSample.leftWrist.y) +
-      Math.abs(rightWrist.x - analysis.previousSample.rightWrist.x) +
-      Math.abs(rightWrist.y - analysis.previousSample.rightWrist.y) +
-      Math.abs(leftShoulder.x - analysis.previousSample.leftShoulder.x) +
-      Math.abs(rightShoulder.x - analysis.previousSample.rightShoulder.x);
-    bounce = Math.abs(torsoCenterY - analysis.previousSample.torsoCenterY);
-    travel = Math.abs(bodyCenterX - analysis.previousSample.bodyCenterX);
+    const motionWeights = [
+      ["leftWrist", leftWrist, 1.3],
+      ["rightWrist", rightWrist, 1.3],
+      ["leftElbow", leftElbow, 0.95],
+      ["rightElbow", rightElbow, 0.95],
+      ["leftAnkle", leftAnkle, 0.9],
+      ["rightAnkle", rightAnkle, 0.9],
+      ["leftKnee", leftKnee, 0.65],
+      ["rightKnee", rightKnee, 0.65],
+      ["leftShoulder", leftShoulder, 0.55],
+      ["rightShoulder", rightShoulder, 0.55],
+      ["leftHip", leftHip, 0.45],
+      ["rightHip", rightHip, 0.45],
+    ];
+    let weightedMotion = 0;
+    let totalWeight = 0;
+
+    motionWeights.forEach(([key, point, weight]) => {
+      weightedMotion += normalizedDelta(point, analysis.previousSample[key], bodyScale) * weight;
+      totalWeight += weight;
+    });
+
+    const meanMotion = totalWeight ? weightedMotion / totalWeight : 0;
+    const torsoShift = normalizedDelta(
+      { x: bodyCenterX, y: bodyCenterY },
+      analysis.previousSample.bodyCenter,
+      torsoHeight
+    );
+    const kneeLift = Math.abs(((leftKnee.y + rightKnee.y) / 2) - analysis.previousSample.kneeCenterY) / torsoHeight;
+
+    energy = clamp((meanMotion + torsoShift * 0.35) / 0.12, 0, 1);
+    bounce = clamp((Math.abs(bodyCenterY - analysis.previousSample.bodyCenter.y) / torsoHeight + kneeLift * 0.35) / 0.1, 0, 1);
+    travel = clamp((Math.abs(bodyCenterX - analysis.previousSample.bodyCenter.x) / shoulderWidth) / 0.12, 0, 1);
   }
 
   analysis.previousSample = {
-    leftWrist: { x: leftWrist.x, y: leftWrist.y },
-    rightWrist: { x: rightWrist.x, y: rightWrist.y },
-    leftShoulder: { x: leftShoulder.x, y: leftShoulder.y },
-    rightShoulder: { x: rightShoulder.x, y: rightShoulder.y },
-    torsoCenterY,
-    bodyCenterX,
+    leftWrist: copyPoint(leftWrist),
+    rightWrist: copyPoint(rightWrist),
+    leftElbow: copyPoint(leftElbow),
+    rightElbow: copyPoint(rightElbow),
+    leftShoulder: copyPoint(leftShoulder),
+    rightShoulder: copyPoint(rightShoulder),
+    leftHip: copyPoint(leftHip),
+    rightHip: copyPoint(rightHip),
+    leftKnee: copyPoint(leftKnee),
+    rightKnee: copyPoint(rightKnee),
+    leftAnkle: copyPoint(leftAnkle),
+    rightAnkle: copyPoint(rightAnkle),
+    kneeCenterY: (leftKnee.y + rightKnee.y) / 2,
+    bodyCenter: { x: bodyCenterX, y: bodyCenterY },
   };
 
-  analysis.smoothedEnergy = analysis.smoothedEnergy * 0.82 + clamp(delta * 0.75, 0, 1) * 0.18;
-  analysis.smoothedBounce = analysis.smoothedBounce * 0.78 + clamp(bounce * 1.5, 0, 1) * 0.22;
-  analysis.smoothedOpenness = analysis.smoothedOpenness * 0.85 + openness * 0.15;
-  analysis.smoothedTravel = analysis.smoothedTravel * 0.82 + clamp(travel * 7, 0, 1) * 0.18;
-  analysis.smoothedSymmetry = analysis.smoothedSymmetry * 0.84 + symmetry * 0.16;
-  analysis.smoothedCross = analysis.smoothedCross * 0.84 + wristCross * 0.16;
-  analysis.smoothedVerticality = analysis.smoothedVerticality * 0.84 + verticality * 0.16;
+  analysis.smoothedEnergy = blendMetric(analysis.smoothedEnergy, energy, 0.22);
+  analysis.smoothedBounce = blendMetric(analysis.smoothedBounce, bounce, 0.2);
+  analysis.smoothedOpenness = blendMetric(analysis.smoothedOpenness, openness, 0.16);
+  analysis.smoothedTravel = blendMetric(analysis.smoothedTravel, travel, 0.2);
+  analysis.smoothedSymmetry = blendMetric(analysis.smoothedSymmetry, symmetry, 0.18);
+  analysis.smoothedCross = blendMetric(analysis.smoothedCross, wristCross, 0.18);
+  analysis.smoothedVerticality = blendMetric(analysis.smoothedVerticality, verticality, 0.18);
   updateXPoseGesture(landmarks);
 
-  const now = performance.now();
   analysis.liveBuffer.push({
     time: now,
     energy: analysis.smoothedEnergy,
@@ -1800,7 +2006,7 @@ function updateAnalysis(landmarks) {
     cross: analysis.smoothedCross,
     verticality: analysis.smoothedVerticality,
   });
-  analysis.liveBuffer = analysis.liveBuffer.filter((sample) => now - sample.time <= analysis.bufferWindowMs);
+  pruneLiveBuffer(now);
 
   if (analysis.liveBuffer.length >= 12) {
     updateLiveStyle();
@@ -1810,6 +2016,9 @@ function updateAnalysis(landmarks) {
 function drawResults(results) {
   poseCtx.clearRect(0, 0, poseCanvas.width, poseCanvas.height);
   if (!results.poseLandmarks) {
+    analysis.previousSample = null;
+    decayAnalysisMetrics(0.84);
+    pruneLiveBuffer();
     resetXPoseGesture();
     moodStatus.textContent = "사람을 화면 안에 보여주세요";
     stabilityStatus.textContent = "포즈 안정도 대기";
