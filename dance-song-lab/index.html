@@ -44,9 +44,15 @@
           <div class="control-bar">
             <button id="captureButton" class="action-button primary" type="button">실시간 반응 시작</button>
             <button id="stopAudioButton" class="action-button" type="button">음악 정지</button>
-            <div class="chip subtle" id="captureStatus">무대 대기 중</div>
-            <p class="control-note">팁: 두 팔로 X 포즈를 만들고 2초 유지하면 즉시 정지됩니다.</p>
+            <button id="recordTemplateButton" class="action-button" type="button">시퀀스 기록</button>
+            <button id="exportTemplatesButton" class="action-button" type="button">템플릿 저장</button>
+            <button id="importTemplatesButton" class="action-button" type="button">템플릿 불러오기</button>
+            <button id="editTemplateButton" class="action-button" type="button">템플릿 수정</button>
+            <button id="deleteTemplateButton" class="action-button" type="button">템플릿 삭제</button>
+            <div class="chip subtle" id="sequenceStatus">템플릿 0개</div>
+            <p class="control-note">팁: 두 팔로 X 포즈를 머리 앞에서 2초 유지하면 즉시 정지됩니다.</p>
           </div>
+          <input id="templateImportInput" type="file" accept=".json,application/json" hidden />
 
           <div class="camera-shell">
             <div class="camera-overlay camera-overlay-top">
@@ -54,7 +60,6 @@
                 <span class="live-indicator" id="liveIndicatorDot" aria-hidden="true"></span>
                 <span>Live Pose Feed</span>
               </span>
-              <span class="overlay-tag overlay-tag-soft">Music Follows Motion</span>
             </div>
             <video id="cameraFeed" playsinline muted></video>
             <canvas id="poseCanvas" width="960" height="720"></canvas>
@@ -63,7 +68,7 @@
           <div class="metric-grid">
             <article class="metric-card metric-card-style">
               <span>Detected Style</span>
-              <strong id="detectedMood">대기</strong>
+              <strong id="detectedMood">없음</strong>
             </article>
             <article class="metric-card metric-card-candidate">
               <span>Switch Candidate</span>
@@ -97,6 +102,72 @@
           </div>
         </section>
       </main>
+
+      <div class="template-studio" id="templateStudio" hidden aria-hidden="true">
+        <div class="template-studio-backdrop" id="templateStudioBackdrop"></div>
+        <section class="template-studio-panel" role="dialog" aria-modal="true" aria-labelledby="templateStudioTitle">
+          <div class="template-studio-head">
+            <div class="template-studio-copy">
+              <p class="section-kicker" id="templateStudioMode">Sequence Studio</p>
+              <h2 class="template-studio-title" id="templateStudioTitle">Template Capture</h2>
+              <p class="template-studio-description" id="templateStudioDescription">
+                춤 시퀀스 이름, 매핑 스타일, 지정 곡을 지금 무드에 맞게 정리합니다.
+              </p>
+            </div>
+            <button id="closeTemplateStudioButton" class="action-button template-close-button" type="button">닫기</button>
+          </div>
+
+          <div class="template-studio-grid">
+            <form class="template-form" id="templateForm" novalidate>
+              <label class="template-field">
+                <span>Template Name</span>
+                <input id="templateNameField" type="text" maxlength="48" placeholder="Billie Jean Hook" />
+              </label>
+
+              <label class="template-field">
+                <span>Mapped Style</span>
+                <select id="templateStyleField">
+                  <option value="Pop">Pop</option>
+                  <option value="EDM">EDM</option>
+                  <option value="Waltz">Waltz</option>
+                </select>
+              </label>
+
+              <label class="template-field">
+                <span>YouTube Track</span>
+                <input
+                  id="templateTrackField"
+                  type="text"
+                  placeholder="YouTube URL 또는 11자리 영상 ID"
+                  autocomplete="off"
+                />
+              </label>
+
+              <p class="template-form-note" id="templateFormNote">
+                곡 입력을 비워두면 선택한 스타일의 라이브러리에서 랜덤 재생됩니다.
+              </p>
+
+              <div class="template-form-actions">
+                <button id="templateFormSubmitButton" class="action-button primary" type="submit">시퀀스 기록 시작</button>
+                <button id="templateFormSecondaryButton" class="action-button" type="button">닫기</button>
+              </div>
+            </form>
+
+            <section class="template-library" aria-labelledby="templateLibrarySummary">
+              <div class="template-library-head">
+                <p class="section-kicker">Template Library</p>
+                <div class="chip subtle" id="templateLibrarySummary">템플릿 0개</div>
+              </div>
+              <div class="template-library-list" id="templateLibraryList"></div>
+              <p class="template-library-empty" id="templateLibraryEmpty">아직 저장된 시퀀스 템플릿이 없습니다.</p>
+            </section>
+          </div>
+
+          <div class="template-studio-foot">
+            <p class="template-studio-message subtle" id="templateStudioMessage">시퀀스 흐름을 여기서 한 번에 관리할 수 있습니다.</p>
+          </div>
+        </section>
+      </div>
     </div>
   </body>
 </html>
