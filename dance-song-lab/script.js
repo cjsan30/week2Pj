@@ -18,6 +18,7 @@ const captureStatus = document.getElementById("captureStatus");
 const youtubePanel = document.getElementById("youtubePanel");
 const youtubeFrame = document.getElementById("youtubeFrame");
 const playerSource = document.getElementById("playerSource");
+const liveIndicatorDot = document.getElementById("liveIndicatorDot");
 
 const patternLibrary = {
   intense: {
@@ -400,7 +401,7 @@ const analysis = {
   smoothedCross: 0,
   smoothedVerticality: 0,
   mood: "Standby",
-  motion: "Observe",
+  motion: "준비 중",
   visibility: 0,
   liveBuffer: [],
   bufferWindowMs: 2600,
@@ -484,7 +485,20 @@ function speakStatusSafe(text) {
   captureStatus.textContent = text;
 }
 
-function updateCandidateDisplay(label = "None", detail = "현재 장르 유지 중") {
+function updateViewportHeight() {
+  const viewportHeight = window.visualViewport?.height || window.innerHeight;
+  const pageTitle = document.querySelector(".page-title");
+  const titleHeight = pageTitle ? Math.ceil(pageTitle.getBoundingClientRect().height) : 0;
+  document.documentElement.style.setProperty("--app-vh", `${Math.round(viewportHeight)}px`);
+  document.documentElement.style.setProperty("--title-block-height", `${titleHeight}px`);
+}
+
+function setLiveIndicator(isLive) {
+  if (!liveIndicatorDot) return;
+  liveIndicatorDot.classList.toggle("is-live", Boolean(isLive));
+}
+
+function updateCandidateDisplay(label = "없음", detail = "현재 장르 유지 중") {
   candidateMood.textContent = label;
   candidateTimer.textContent = detail;
 }
@@ -499,7 +513,7 @@ function resetAnalysisState() {
   analysis.smoothedCross = 0;
   analysis.smoothedVerticality = 0;
   analysis.mood = "Standby";
-  analysis.motion = "Observe";
+  analysis.motion = "준비 중";
   analysis.visibility = 0;
   analysis.liveBuffer = [];
   analysis.latestAggregate = null;
@@ -645,7 +659,7 @@ function stopPlayback(reason = "음악 정지됨") {
   hideYoutubePlayer();
   captureButton.disabled = false;
   setEngineUi(false);
-  updateCandidateDisplay("None", "현재 장르 유지 중");
+  updateCandidateDisplay("없음", "현재 장르 유지 중");
   speakStatusSafe(reason);
 }
 
@@ -1411,7 +1425,7 @@ function classifyStyle(features = analysis) {
   if (profile.smoothedEnergy < 0.08 && profile.smoothedBounce < 0.05) {
     const fallbackStyle = playbackState.currentStyle || DEFAULT_STYLE;
     analysis.mood = fallbackStyle;
-    analysis.motion = "Waiting for clearer movement";
+    analysis.motion = "움직임 대기";
     detectedMood.textContent = fallbackStyle;
     motionType.textContent = analysis.motion;
     moodStatus.textContent = `스타일: ${fallbackStyle}`;
@@ -1430,13 +1444,13 @@ function classifyStyle(features = analysis) {
   const ranked = Object.entries(scores).sort((a, b) => b[1] - a[1]);
   const [style] = ranked[0];
   const descriptors = {
-    EDM: "큰 에너지 / 드롭형 움직임",
-    Pop: "중간 바운스 / 대중적인 안무",
-    Waltz: "부드럽고 열린 흐름",
+    EDM: "드롭형 움직임",
+    Pop: "정돈된 안무",
+    Waltz: "열린 흐름",
   };
 
   analysis.mood = style;
-  analysis.motion = descriptors[style] || "Observed motion";
+  analysis.motion = descriptors[style] || "움직임 분석 중";
   detectedMood.textContent = style;
   motionType.textContent = analysis.motion;
   moodStatus.textContent = `스타일: ${style}`;
@@ -1515,7 +1529,7 @@ function updateLiveStyle() {
     clearStyleCandidate();
     detectedMood.textContent = style;
     moodStatus.textContent = `감지 스타일: ${style}`;
-    updateCandidateDisplay("None", "재생 전 대기");
+    updateCandidateDisplay("없음", "재생 전 대기");
     return;
   }
 
@@ -1832,6 +1846,7 @@ function drawResults(results) {
 async function initPose() {
   if (!window.Pose || !window.Camera) {
     cameraStatus.textContent = "포즈 라이브러리 로드 실패";
+    setLiveIndicator(false);
     return;
   }
 
@@ -1858,18 +1873,26 @@ async function initPose() {
     });
     await camera.start();
     cameraStatus.textContent = "카메라 연결됨";
+    setLiveIndicator(true);
   } catch (error) {
     cameraStatus.textContent = "카메라 권한 거부 또는 연결 실패";
+    setLiveIndicator(false);
     console.error(error);
   }
 }
 
 window.addEventListener("load", async () => {
+  updateViewportHeight();
+  setLiveIndicator(false);
   await initPose();
   setEngineUi(false);
-  updateCandidateDisplay("None", "현재 장르 유지 중");
+  updateCandidateDisplay("없음", "현재 장르 유지 중");
   speakStatusSafe("대기 중");
 });
+
+window.addEventListener("resize", updateViewportHeight);
+window.visualViewport?.addEventListener("resize", updateViewportHeight);
+document.fonts?.ready?.then(updateViewportHeight);
 
 captureButton.addEventListener("click", async () => {
   if (playbackState.active || playbackState.pendingStart) return;
@@ -1884,10 +1907,10 @@ captureButton.addEventListener("click", async () => {
   transportState.queuedStyle = DEFAULT_STYLE;
   captureButton.disabled = true;
   setEngineUi(false);
-  detectedMood.textContent = "Analyzing";
-  motionType.textContent = "Observe";
+  detectedMood.textContent = "분석 중";
+  motionType.textContent = "준비 중";
   moodStatus.textContent = "첫 곡 분석 중 · 4초";
-  updateCandidateDisplay("Analyzing", "첫 곡 분석 중 · 4초");
+  updateCandidateDisplay("분석 중", "첫 곡 분석 중 · 4초");
   speakStatusSafe("첫 곡 분석 중");
 });
 
