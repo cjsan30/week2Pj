@@ -3,10 +3,16 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Dance Song Lab</title>
+    <title>MoveMuse | Dance Song Lab</title>
     <meta
       name="description"
-      content="춤 모션을 보고 실시간으로 음악을 바꾸는 웹 프로토타입"
+      content="춤 모션을 읽고 실시간으로 가장 어울리는 음악 분위기로 전환하는 웹 기반 인터랙티브 스테이지"
+    />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700;800&family=Space+Grotesk:wght@400;500;700&display=swap"
+      rel="stylesheet"
     />
     <link rel="stylesheet" href="./styles.css" />
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" defer></script>
@@ -16,63 +22,77 @@
     <script src="./script.js" defer></script>
   </head>
   <body>
-    <div class="page">
-      <header class="hero">
-        <div class="hero-copy">
-          <p class="eyebrow">Dance Song Lab</p>
-          <h1>MoveMuse</h1>
-          <p>
-            카메라로 포즈를 읽고 에너지, 바운스, 팔의 열림 정도를 분석한 뒤,
-            지금 춤에 맞춰 음악을 실시간으로 바꿉니다.
-          </p>
-        </div>
-        <div class="hero-status">
-          <div class="chip" id="cameraStatus">카메라 연결 대기</div>
-          <div class="chip" id="moodStatus">무드 분석 대기</div>
-          <div class="chip" id="energyStatus">에너지 0%</div>
-        </div>
-      </header>
+    <div class="page-shell">
+      <div class="ambient ambient-one"></div>
+      <div class="ambient ambient-two"></div>
 
-      <main class="layout">
-        <section class="stage-card">
+      <main class="page">
+        <h1 class="page-title">The DJ Who Loves Me</h1>
+
+        <section class="stage-card" id="live-stage">
           <div class="stage-header">
-            <h2>Live Motion Stage</h2>
+            <p class="section-kicker">Live Stage</p>
             <div class="chip subtle" id="stabilityStatus">포즈 안정도 대기</div>
           </div>
+
+          <div class="status-strip" aria-hidden="true">
+            <div class="status-chip" id="cameraStatus">카메라 연결 대기</div>
+            <div class="status-chip" id="moodStatus">무드 분석 대기</div>
+            <div class="status-chip status-chip-accent" id="energyStatus">에너지 0%</div>
+          </div>
+
           <div class="control-bar">
             <button id="captureButton" class="action-button primary" type="button">실시간 반응 시작</button>
             <button id="stopAudioButton" class="action-button" type="button">음악 정지</button>
-            <div class="chip subtle" id="captureStatus">대기 중</div>
+            <button id="recordTemplateButton" class="action-button" type="button">시퀀스 기록</button>
+            <button id="exportTemplatesButton" class="action-button" type="button">템플릿 저장</button>
+            <button id="importTemplatesButton" class="action-button" type="button">템플릿 불러오기</button>
+            <button id="editTemplateButton" class="action-button" type="button">템플릿 수정</button>
+            <button id="deleteTemplateButton" class="action-button" type="button">템플릿 삭제</button>
+            <div class="chip subtle" id="sequenceStatus">템플릿 0개</div>
+            <p class="control-note">팁: 두 팔로 X 포즈를 머리 앞에서 2초 유지하면 즉시 정지됩니다.</p>
           </div>
-          <div class="camera-frame">
+          <input id="templateImportInput" type="file" accept=".json,application/json" hidden />
+
+          <div class="camera-shell">
+            <div class="camera-overlay camera-overlay-top">
+              <span class="overlay-tag overlay-tag-live">
+                <span class="live-indicator" id="liveIndicatorDot" aria-hidden="true"></span>
+                <span>Live Pose Feed</span>
+              </span>
+            </div>
             <video id="cameraFeed" playsinline muted></video>
             <canvas id="poseCanvas" width="960" height="720"></canvas>
           </div>
+
           <div class="metric-grid">
-            <article>
-              <span>Dance Mood</span>
-              <strong id="detectedMood">Standby</strong>
+            <article class="metric-card metric-card-style">
+              <span>Detected Style</span>
+              <strong id="detectedMood">없음</strong>
             </article>
-            <article>
+            <article class="metric-card metric-card-candidate">
               <span>Switch Candidate</span>
-              <strong id="candidateMood">None</strong>
-              <small id="candidateTimer">현재 장르 유지 중</small>
+              <div class="metric-inline">
+                <strong id="candidateMood">없음</strong>
+                <small id="candidateTimer">현재 장르 유지 중</small>
+              </div>
             </article>
-            <article>
-              <span>Motion Type</span>
-              <strong id="motionType">Observe</strong>
+            <article class="metric-card metric-card-motion">
+              <span>Motion Character</span>
+              <strong id="motionType">준비 중</strong>
             </article>
-            <article>
+            <article class="metric-card metric-card-value">
               <span>Body Openness</span>
               <strong id="opennessValue">0%</strong>
             </article>
-            <article>
+            <article class="metric-card metric-card-value">
               <span>Bounce</span>
               <strong id="bounceValue">0%</strong>
             </article>
           </div>
         </section>
 
+<<<<<<< HEAD
         <aside class="sidebar">
           <section class="panel youtube-panel" id="youtubePanel" hidden>
             <div class="stage-header">
@@ -111,7 +131,84 @@
             </ul>
           </section>
         </aside>
+=======
+        <section class="youtube-panel" id="youtubePanel" hidden>
+          <div class="youtube-panel-head">
+            <p class="section-kicker">Playback</p>
+            <div class="chip subtle" id="playerSource">생성 음악</div>
+          </div>
+          <div class="youtube-frame-wrap">
+            <div id="youtubeFrame"></div>
+          </div>
+        </section>
+>>>>>>> codex/front
       </main>
+
+      <div class="template-studio" id="templateStudio" hidden aria-hidden="true">
+        <div class="template-studio-backdrop" id="templateStudioBackdrop"></div>
+        <section class="template-studio-panel" role="dialog" aria-modal="true" aria-labelledby="templateStudioTitle">
+          <div class="template-studio-head">
+            <div class="template-studio-copy">
+              <p class="section-kicker" id="templateStudioMode">Sequence Studio</p>
+              <h2 class="template-studio-title" id="templateStudioTitle">Template Capture</h2>
+              <p class="template-studio-description" id="templateStudioDescription">
+                춤 시퀀스 이름, 매핑 스타일, 지정 곡을 지금 무드에 맞게 정리합니다.
+              </p>
+            </div>
+            <button id="closeTemplateStudioButton" class="action-button template-close-button" type="button">닫기</button>
+          </div>
+
+          <div class="template-studio-grid">
+            <form class="template-form" id="templateForm" novalidate>
+              <label class="template-field">
+                <span>Template Name</span>
+                <input id="templateNameField" type="text" maxlength="48" placeholder="Billie Jean Hook" />
+              </label>
+
+              <label class="template-field">
+                <span>Mapped Style</span>
+                <select id="templateStyleField">
+                  <option value="Pop">Pop</option>
+                  <option value="EDM">EDM</option>
+                  <option value="Waltz">Waltz</option>
+                </select>
+              </label>
+
+              <label class="template-field">
+                <span>YouTube Track</span>
+                <input
+                  id="templateTrackField"
+                  type="text"
+                  placeholder="YouTube URL 또는 11자리 영상 ID"
+                  autocomplete="off"
+                />
+              </label>
+
+              <p class="template-form-note" id="templateFormNote">
+                곡 입력을 비워두면 선택한 스타일의 라이브러리에서 랜덤 재생됩니다.
+              </p>
+
+              <div class="template-form-actions">
+                <button id="templateFormSubmitButton" class="action-button primary" type="submit">시퀀스 기록 시작</button>
+                <button id="templateFormSecondaryButton" class="action-button" type="button">닫기</button>
+              </div>
+            </form>
+
+            <section class="template-library" aria-labelledby="templateLibrarySummary">
+              <div class="template-library-head">
+                <p class="section-kicker">Template Library</p>
+                <div class="chip subtle" id="templateLibrarySummary">템플릿 0개</div>
+              </div>
+              <div class="template-library-list" id="templateLibraryList"></div>
+              <p class="template-library-empty" id="templateLibraryEmpty">아직 저장된 시퀀스 템플릿이 없습니다.</p>
+            </section>
+          </div>
+
+          <div class="template-studio-foot">
+            <p class="template-studio-message subtle" id="templateStudioMessage">시퀀스 흐름을 여기서 한 번에 관리할 수 있습니다.</p>
+          </div>
+        </section>
+      </div>
     </div>
   </body>
 </html>

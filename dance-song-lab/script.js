@@ -14,10 +14,35 @@ const opennessValue = document.getElementById("opennessValue");
 const bounceValue = document.getElementById("bounceValue");
 const captureButton = document.getElementById("captureButton");
 const stopAudioButton = document.getElementById("stopAudioButton");
+const recordTemplateButton = document.getElementById("recordTemplateButton");
+const exportTemplatesButton = document.getElementById("exportTemplatesButton");
+const importTemplatesButton = document.getElementById("importTemplatesButton");
+const editTemplateButton = document.getElementById("editTemplateButton");
+const deleteTemplateButton = document.getElementById("deleteTemplateButton");
 const captureStatus = document.getElementById("captureStatus");
+const sequenceStatus = document.getElementById("sequenceStatus");
 const youtubePanel = document.getElementById("youtubePanel");
 const youtubeFrame = document.getElementById("youtubeFrame");
 const playerSource = document.getElementById("playerSource");
+const liveIndicatorDot = document.getElementById("liveIndicatorDot");
+const templateImportInput = document.getElementById("templateImportInput");
+const templateStudio = document.getElementById("templateStudio");
+const templateStudioBackdrop = document.getElementById("templateStudioBackdrop");
+const closeTemplateStudioButton = document.getElementById("closeTemplateStudioButton");
+const templateStudioMode = document.getElementById("templateStudioMode");
+const templateStudioTitle = document.getElementById("templateStudioTitle");
+const templateStudioDescription = document.getElementById("templateStudioDescription");
+const templateStudioMessage = document.getElementById("templateStudioMessage");
+const templateForm = document.getElementById("templateForm");
+const templateNameField = document.getElementById("templateNameField");
+const templateStyleField = document.getElementById("templateStyleField");
+const templateTrackField = document.getElementById("templateTrackField");
+const templateFormSubmitButton = document.getElementById("templateFormSubmitButton");
+const templateFormSecondaryButton = document.getElementById("templateFormSecondaryButton");
+const templateFormNote = document.getElementById("templateFormNote");
+const templateLibrarySummary = document.getElementById("templateLibrarySummary");
+const templateLibraryList = document.getElementById("templateLibraryList");
+const templateLibraryEmpty = document.getElementById("templateLibraryEmpty");
 
 const patternLibrary = {
   intense: {
@@ -44,7 +69,7 @@ const patternLibrary = {
     counter: [81, null, 79, 81, null, 84, 81, 79],
     drone: 33,
   },
-  hiphop: {
+  edm_alt: {
     bpm: 98,
     meter: 4,
     chordType: "triangle",
@@ -378,13 +403,27 @@ const styleToTrackKey = {
 };
 
 const DEFAULT_STYLE = "Pop";
+const INACTIVE_DETECTED_STYLE = "없음";
 const INITIAL_ANALYSIS_MS = 4000;
 const STYLE_SWITCH_HOLD_MS = 1800;
 const STYLE_SWITCH_COOLDOWN_MS = 0;
 const STYLE_SWITCH_SCORE_GAP = 0.03;
 const STYLE_SWITCH_CANDIDATE_GRACE_MS = 500;
+<<<<<<< HEAD
 const MIN_ANALYSIS_VISIBILITY = 0.42;
 const HARD_RESET_VISIBILITY = 0.25;
+=======
+const X_POSE_HOLD_MS = 2000;
+const SEQUENCE_STORAGE_KEY = "moveMuseSequenceTemplates";
+const SEQUENCE_KEYPOINTS = [11, 12, 13, 14, 15, 16, 23, 24, 25, 26, 27, 28];
+const SEQUENCE_SAMPLE_MS = 90;
+const SEQUENCE_BUFFER_WINDOW_MS = 12000;
+const SEQUENCE_TARGET_FRAMES = 28;
+const SEQUENCE_MIN_RECORDING_FRAMES = 18;
+const SEQUENCE_MATCH_THRESHOLD = 0.24;
+const SEQUENCE_MATCH_COOLDOWN_MS = 2600;
+const SEQUENCE_ALLOWED_STYLES = ["Waltz", "EDM", "Pop"];
+>>>>>>> codex/front
 
 const youtubeLibrary = window.DANCE_YOUTUBE_LIBRARY || {
   EDM: [],
@@ -402,11 +441,25 @@ const analysis = {
   smoothedCross: 0,
   smoothedVerticality: 0,
   mood: "Standby",
-  motion: "Observe",
+  motion: "준비 중",
   visibility: 0,
   liveBuffer: [],
   bufferWindowMs: 2600,
   latestAggregate: null,
+};
+
+const sequenceState = {
+  liveFrames: [],
+  lastLiveSampleAt: 0,
+  templates: [],
+  recording: null,
+  bestMatch: null,
+};
+
+const templateStudioState = {
+  open: false,
+  mode: "record",
+  selectedTemplateId: null,
 };
 
 const transportState = {
@@ -448,6 +501,9 @@ const playbackState = {
   mode: "idle",
   currentStyle: null,
   youtubeVideoId: null,
+  youtubeEntry: null,
+  currentTemplateId: null,
+  currentTrackKey: null,
 };
 
 const youtubeState = {
@@ -519,10 +575,1053 @@ function segmentsIntersect(a, b, c, d) {
 }
 
 function speakStatusSafe(text) {
+  if (!captureStatus) return;
   captureStatus.textContent = text;
 }
 
-function updateCandidateDisplay(label = "None", detail = "현재 장르 유지 중") {
+function setCaptureStatusText(text) {
+  if (!captureStatus) return;
+  captureStatus.textContent = text;
+}
+
+function setMotionLabel(text, multiline = false) {
+  if (!motionType) return;
+  motionType.textContent = text;
+  motionType.classList.toggle("motion-label-sequence", multiline);
+}
+
+function isKeyboardInputTarget(target) {
+  if (!(target instanceof Element)) return false;
+  if (target.closest("input, textarea, select, button")) return true;
+  if (target.closest('[contenteditable=""], [contenteditable="true"]')) return true;
+  return false;
+}
+
+function updateViewportHeight() {
+  const viewportHeight = window.visualViewport?.height || window.innerHeight;
+  const pageTitle = document.querySelector(".page-title");
+  const titleHeight = pageTitle ? Math.ceil(pageTitle.getBoundingClientRect().height) : 0;
+  document.documentElement.style.setProperty("--app-vh", `${Math.round(viewportHeight)}px`);
+  document.documentElement.style.setProperty("--title-block-height", `${titleHeight}px`);
+}
+
+function setLiveIndicator(isLive) {
+  if (!liveIndicatorDot) return;
+  liveIndicatorDot.classList.toggle("is-live", Boolean(isLive));
+}
+
+function slugifyTemplateName(value) {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9가-힣]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 48);
+}
+
+function normalizeSequenceStyle(value) {
+  const normalized = String(value || "")
+    .trim()
+    .toLowerCase();
+
+  if (normalized === "edm" || normalized === "hiphop" || normalized === "hip-hop") return "EDM";
+  if (normalized === "pop") return "Pop";
+  if (normalized === "waltz") return "Waltz";
+  return null;
+}
+
+function normalizeTemplateTrack(track, fallbackTitle = "Sequence Track") {
+  if (!track) return null;
+
+  const rawId =
+    typeof track === "string"
+      ? track
+      : typeof track === "object"
+        ? track.id || track.videoId || track.url || ""
+        : "";
+  const candidate = String(rawId || "").trim();
+  if (!candidate) return null;
+
+  const directIdMatch = candidate.match(/^[A-Za-z0-9_-]{11}$/);
+  const videoId = extractVideoIdFromUrl(candidate) || directIdMatch?.[0] || null;
+  if (!videoId) return null;
+
+  const title =
+    typeof track === "object" && typeof track.title === "string" && track.title.trim()
+      ? track.title.trim()
+      : fallbackTitle;
+  const startValue = typeof track === "object" ? Number(track.startSeconds) : 0;
+
+  return {
+    id: videoId,
+    url: /^https?:/i.test(candidate) ? candidate : `https://www.youtube.com/watch?v=${videoId}`,
+    title,
+    source: "Template",
+    startSeconds: Number.isFinite(startValue) && startValue > 0 ? Math.round(startValue) : 0,
+  };
+}
+
+function normalizeSequenceTemplate(template) {
+  if (!template || !Array.isArray(template.frames) || template.frames.length === 0) {
+    return null;
+  }
+
+  const name = String(template.name || "").trim();
+  if (!name) return null;
+
+  const style = normalizeSequenceStyle(template.style) || DEFAULT_STYLE;
+  const normalizedFrames = template.frames
+    .filter((frame) => Array.isArray(frame) && frame.length > 0)
+    .map((frame) =>
+      frame
+        .map((value) => Number(value))
+        .filter((value) => Number.isFinite(value))
+    )
+    .filter((frame) => frame.length > 0);
+
+  if (!normalizedFrames.length) return null;
+
+  return {
+    ...template,
+    id: template.id || `template-${slugifyTemplateName(name)}-${Date.now()}`,
+    name,
+    style,
+    durationMs: Math.max(Number(template.durationMs) || 0, normalizedFrames.length * SEQUENCE_SAMPLE_MS),
+    frames: normalizedFrames,
+    track: normalizeTemplateTrack(template.track || template.youtubeId || template.youtubeUrl, name),
+  };
+}
+
+function loadSequenceTemplates() {
+  try {
+    const raw = window.localStorage.getItem(SEQUENCE_STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    const templates = Array.isArray(parsed?.templates) ? parsed.templates : Array.isArray(parsed) ? parsed : [];
+    return templates.map((template) => normalizeSequenceTemplate(template)).filter(Boolean);
+  } catch (error) {
+    console.warn("Failed to load sequence templates", error);
+    return [];
+  }
+}
+
+function saveSequenceTemplates() {
+  try {
+    window.localStorage.setItem(
+      SEQUENCE_STORAGE_KEY,
+      JSON.stringify({
+        version: 1,
+        updatedAt: new Date().toISOString(),
+        templates: sequenceState.templates,
+      })
+    );
+  } catch (error) {
+    console.warn("Failed to save sequence templates", error);
+  }
+}
+
+function setSequenceStatus(text) {
+  if (!sequenceStatus) return;
+  sequenceStatus.textContent = text;
+}
+
+function updateSequenceUi() {
+  const templateCount = sequenceState.templates.length;
+  const hasTemplates = templateCount > 0;
+  const isRecording = Boolean(sequenceState.recording);
+  if (recordTemplateButton) {
+    recordTemplateButton.textContent = sequenceState.recording ? "기록 종료" : "시퀀스 기록";
+  }
+  if (exportTemplatesButton) {
+    exportTemplatesButton.disabled = !hasTemplates;
+  }
+  if (editTemplateButton) {
+    editTemplateButton.disabled = !hasTemplates || isRecording;
+  }
+  if (deleteTemplateButton) {
+    deleteTemplateButton.disabled = !hasTemplates || isRecording;
+  }
+
+  if (sequenceState.recording) {
+    const recordedSeconds = Math.max(0, (performance.now() - sequenceState.recording.startedAt) / 1000);
+    setSequenceStatus(`기록 중 · ${sequenceState.recording.name} · ${recordedSeconds.toFixed(1)}초`);
+    return;
+  }
+
+  if (sequenceState.bestMatch?.matched) {
+    setSequenceStatus(
+      `${sequenceState.bestMatch.name} ${Math.round(sequenceState.bestMatch.confidence * 100)}%`
+    );
+    return;
+  }
+
+  setSequenceStatus(`템플릿 ${templateCount}개`);
+}
+
+function describeTemplateTrack(template) {
+  if (!template?.track) return "스타일 랜덤 재생";
+  return template.track.title || template.track.id || "지정 곡";
+}
+
+function promptForTemplateSelection(actionLabel = "관리") {
+  if (!sequenceState.templates.length) {
+    window.alert("관리할 템플릿이 없습니다.");
+    return null;
+  }
+
+  const templateList = sequenceState.templates
+    .map((template, index) => `${index + 1}. ${template.name} · ${template.style} · ${describeTemplateTrack(template)}`)
+    .join("\n");
+  const selectedValue = window.prompt(
+    `${actionLabel}할 템플릿 번호를 입력하세요.\n\n${templateList}`,
+    "1"
+  );
+  if (selectedValue === null) return null;
+
+  const selectedIndex = Number.parseInt(selectedValue, 10) - 1;
+  if (!Number.isInteger(selectedIndex) || selectedIndex < 0 || selectedIndex >= sequenceState.templates.length) {
+    window.alert("올바른 템플릿 번호를 입력해 주세요.");
+    return null;
+  }
+
+  return {
+    index: selectedIndex,
+    template: sequenceState.templates[selectedIndex],
+  };
+}
+
+function exportSequenceTemplates() {
+  if (!sequenceState.templates.length) return;
+
+  const payload = JSON.stringify(
+    {
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      templates: sequenceState.templates,
+    },
+    null,
+    2
+  );
+
+  const blob = new Blob([payload], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = "move-muse-sequence-templates.json";
+  anchor.click();
+  URL.revokeObjectURL(url);
+}
+
+function mergeImportedTemplates(payload) {
+  const imported = Array.isArray(payload?.templates) ? payload.templates : Array.isArray(payload) ? payload : [];
+  if (!imported.length) {
+    window.alert("불러올 템플릿이 없습니다.");
+    return;
+  }
+
+  const validTemplates = imported.map((template) => normalizeSequenceTemplate(template)).filter(Boolean);
+
+  if (!validTemplates.length) {
+    window.alert("템플릿 형식이 올바르지 않습니다.");
+    return;
+  }
+
+  const deduped = new Map(sequenceState.templates.map((template) => [template.id, template]));
+  validTemplates.forEach((template) => {
+    deduped.set(template.id, template);
+  });
+
+  sequenceState.templates = Array.from(deduped.values());
+  saveSequenceTemplates();
+  updateSequenceUi();
+  speakStatusSafe(`템플릿 ${validTemplates.length}개 불러옴`);
+}
+
+function promptForTemplateSetup(initialTemplate = null) {
+  const defaultName = initialTemplate?.name || `dance-${sequenceState.templates.length + 1}`;
+  const name = window.prompt("템플릿 이름을 입력하세요.", defaultName);
+  if (name === null) return null;
+
+  const trimmedName = name.trim();
+  if (!trimmedName) {
+    window.alert("템플릿 이름은 비워둘 수 없습니다.");
+    return null;
+  }
+
+  const defaultStyle = initialTemplate?.style || normalizeSequenceStyle(detectedMood.textContent) || DEFAULT_STYLE;
+  const styleInput = window.prompt("매핑할 스타일을 입력하세요. (EDM / Pop / Waltz)", defaultStyle);
+  if (styleInput === null) return null;
+
+  const style = normalizeSequenceStyle(styleInput);
+  if (!style) {
+    window.alert("스타일은 EDM, Pop, Waltz 중 하나여야 합니다.");
+    return null;
+  }
+
+  const trackInput = window.prompt(
+    "이 안무에 연결할 YouTube URL 또는 11자리 영상 ID를 입력하세요. 비워두면 스타일 랜덤 재생을 사용합니다.",
+    initialTemplate?.track?.url || initialTemplate?.track?.id || ""
+  );
+  const track = normalizeTemplateTrack(trackInput, trimmedName);
+  if (trackInput && trackInput.trim() && !track) {
+    window.alert("YouTube URL 또는 11자리 영상 ID만 사용할 수 있습니다.");
+    return null;
+  }
+
+  return {
+    id: initialTemplate?.id || `template-${slugifyTemplateName(trimmedName)}-${Date.now()}`,
+    name: trimmedName,
+    style,
+    track,
+  };
+}
+
+function editSequenceTemplate() {
+  if (sequenceState.recording) {
+    window.alert("기록 중에는 템플릿을 수정할 수 없습니다.");
+    return;
+  }
+
+  const selected = promptForTemplateSelection("수정");
+  if (!selected) return;
+
+  const updatedSetup = promptForTemplateSetup(selected.template);
+  if (!updatedSetup) return;
+
+  const updatedTemplate = normalizeSequenceTemplate({
+    ...selected.template,
+    ...updatedSetup,
+    updatedAt: new Date().toISOString(),
+  });
+  if (!updatedTemplate) {
+    window.alert("템플릿 정보를 다시 확인해 주세요.");
+    return;
+  }
+
+  sequenceState.templates = sequenceState.templates.map((template, index) => {
+    return index === selected.index ? updatedTemplate : template;
+  });
+
+  if (sequenceState.bestMatch?.id === updatedTemplate.id) {
+    sequenceState.bestMatch = {
+      ...sequenceState.bestMatch,
+      ...updatedTemplate,
+    };
+  }
+
+  saveSequenceTemplates();
+  updateSequenceUi();
+  speakStatusSafe(`템플릿 수정: ${updatedTemplate.name}`);
+}
+
+function deleteSequenceTemplate() {
+  if (sequenceState.recording) {
+    window.alert("기록 중에는 템플릿을 삭제할 수 없습니다.");
+    return;
+  }
+
+  const selected = promptForTemplateSelection("삭제");
+  if (!selected) return;
+
+  const shouldDelete = window.confirm(`${selected.template.name} 템플릿을 삭제할까요?`);
+  if (!shouldDelete) return;
+
+  sequenceState.templates = sequenceState.templates.filter((_, index) => index !== selected.index);
+
+  if (sequenceState.bestMatch?.id === selected.template.id) {
+    sequenceState.bestMatch = null;
+  }
+
+  if (playbackState.currentTemplateId === selected.template.id) {
+    playbackState.currentTemplateId = null;
+    playbackState.currentTrackKey = null;
+    playbackState.youtubeEntry = null;
+  }
+
+  saveSequenceTemplates();
+  updateSequenceUi();
+  speakStatusSafe(`템플릿 삭제: ${selected.template.name}`);
+}
+
+function resampleSequenceFrames(frames, targetLength) {
+  if (!frames.length || targetLength <= 0) return [];
+  if (frames.length === targetLength) return frames.map((frame) => [...frame]);
+  if (frames.length === 1) {
+    return Array.from({ length: targetLength }, () => [...frames[0]]);
+  }
+
+  const result = [];
+  const lastIndex = frames.length - 1;
+  for (let index = 0; index < targetLength; index += 1) {
+    const position = (index * lastIndex) / Math.max(targetLength - 1, 1);
+    const lowerIndex = Math.floor(position);
+    const upperIndex = Math.min(lastIndex, Math.ceil(position));
+    const weight = position - lowerIndex;
+    const lowerFrame = frames[lowerIndex];
+    const upperFrame = frames[upperIndex];
+
+    const interpolated = lowerFrame.map((value, valueIndex) => {
+      return value + (upperFrame[valueIndex] - value) * weight;
+    });
+    result.push(interpolated);
+  }
+
+  return result;
+}
+
+function sequenceDistance(sequenceA, sequenceB) {
+  if (!sequenceA.length || !sequenceB.length || sequenceA.length !== sequenceB.length) return Number.POSITIVE_INFINITY;
+  let total = 0;
+  let count = 0;
+
+  for (let frameIndex = 0; frameIndex < sequenceA.length; frameIndex += 1) {
+    const frameA = sequenceA[frameIndex];
+    const frameB = sequenceB[frameIndex];
+    for (let valueIndex = 0; valueIndex < frameA.length; valueIndex += 1) {
+      total += Math.abs(frameA[valueIndex] - frameB[valueIndex]);
+      count += 1;
+    }
+  }
+
+  return count ? total / count : Number.POSITIVE_INFINITY;
+}
+
+function normalizePoseFrame(landmarks) {
+  const keypoints = SEQUENCE_KEYPOINTS.map((index) => landmarks[index]).filter(Boolean);
+  if (keypoints.length !== SEQUENCE_KEYPOINTS.length) return null;
+  if (averageVisibility(keypoints) < 0.45) return null;
+
+  const leftShoulder = landmarks[11];
+  const rightShoulder = landmarks[12];
+  const leftHip = landmarks[23];
+  const rightHip = landmarks[24];
+
+  const shoulderCenterX = (leftShoulder.x + rightShoulder.x) / 2;
+  const shoulderCenterY = (leftShoulder.y + rightShoulder.y) / 2;
+  const hipCenterX = (leftHip.x + rightHip.x) / 2;
+  const hipCenterY = (leftHip.y + rightHip.y) / 2;
+  const centerX = (shoulderCenterX + hipCenterX) / 2;
+  const centerY = (shoulderCenterY + hipCenterY) / 2;
+  const torsoScale = Math.max(
+    distance(leftShoulder, rightShoulder),
+    Math.hypot(hipCenterX - shoulderCenterX, hipCenterY - shoulderCenterY),
+    0.001
+  );
+
+  return SEQUENCE_KEYPOINTS.flatMap((index) => {
+    const point = landmarks[index];
+    return [
+      Number(((point.x - centerX) / torsoScale).toFixed(4)),
+      Number(((point.y - centerY) / torsoScale).toFixed(4)),
+    ];
+  });
+}
+
+function evaluateBestSequenceMatch(now = performance.now()) {
+  if (!sequenceState.templates.length || sequenceState.recording) {
+    sequenceState.bestMatch = null;
+    updateSequenceUi();
+    return null;
+  }
+
+  let bestMatch = null;
+  for (const template of sequenceState.templates) {
+    const durationMs = Math.max(template.durationMs || 0, template.frames.length * SEQUENCE_SAMPLE_MS);
+    const windowStart = now - durationMs - SEQUENCE_SAMPLE_MS * 2;
+    const liveFrames = sequenceState.liveFrames.filter((frame) => frame.time >= windowStart);
+    if (liveFrames.length < Math.max(10, Math.floor(template.frames.length * 0.65))) continue;
+
+    const liveSequence = resampleSequenceFrames(
+      liveFrames.map((frame) => frame.values),
+      template.frames.length
+    );
+    const distanceScore = sequenceDistance(liveSequence, template.frames);
+    const confidence = clamp(1 - distanceScore / SEQUENCE_MATCH_THRESHOLD, 0, 1);
+    const matched = distanceScore <= SEQUENCE_MATCH_THRESHOLD;
+
+    if (!bestMatch || distanceScore < bestMatch.distance) {
+      bestMatch = { ...template, distance: distanceScore, confidence, matched };
+    }
+  }
+
+  sequenceState.bestMatch = bestMatch;
+  updateSequenceUi();
+  return bestMatch;
+}
+
+function startSequenceRecording() {
+  const setup = promptForTemplateSetup();
+  if (!setup) return;
+
+  sequenceState.recording = {
+    ...setup,
+    startedAt: performance.now(),
+    frames: [],
+  };
+  sequenceState.bestMatch = null;
+  updateSequenceUi();
+  speakStatusSafe(`시퀀스 기록 시작: ${setup.name}`);
+}
+
+function stopSequenceRecording() {
+  if (!sequenceState.recording) return;
+
+  const recording = sequenceState.recording;
+  sequenceState.recording = null;
+
+  if (recording.frames.length < SEQUENCE_MIN_RECORDING_FRAMES) {
+    updateSequenceUi();
+    window.alert("시퀀스가 너무 짧습니다. 2초 이상 기록해 주세요.");
+    speakStatusSafe("시퀀스 기록 실패");
+    return;
+  }
+
+  const durationMs = recording.frames[recording.frames.length - 1].time || recording.frames.length * SEQUENCE_SAMPLE_MS;
+  const template = {
+    id: recording.id,
+    name: recording.name,
+    style: recording.style,
+    track: recording.track || null,
+    durationMs: Math.round(durationMs),
+    createdAt: new Date().toISOString(),
+    frames: resampleSequenceFrames(
+      recording.frames.map((frame) => frame.values),
+      SEQUENCE_TARGET_FRAMES
+    ),
+  };
+
+  sequenceState.templates = [...sequenceState.templates, template];
+  saveSequenceTemplates();
+  updateSequenceUi();
+  speakStatusSafe(`시퀀스 저장: ${template.name}`);
+}
+
+function toggleSequenceRecording() {
+  if (sequenceState.recording) {
+    stopSequenceRecording();
+    return;
+  }
+  startSequenceRecording();
+}
+
+function captureSequenceFrame(landmarks, now) {
+  if (sequenceState.lastLiveSampleAt && now - sequenceState.lastLiveSampleAt < SEQUENCE_SAMPLE_MS) return;
+  const values = normalizePoseFrame(landmarks);
+  if (!values) return;
+
+  sequenceState.lastLiveSampleAt = now;
+  sequenceState.liveFrames.push({ time: now, values });
+  sequenceState.liveFrames = sequenceState.liveFrames.filter((frame) => now - frame.time <= SEQUENCE_BUFFER_WINDOW_MS);
+
+  if (sequenceState.recording) {
+    sequenceState.recording.frames.push({
+      time: now - sequenceState.recording.startedAt,
+      values,
+    });
+  }
+
+  evaluateBestSequenceMatch(now);
+}
+
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function getTemplateById(templateId) {
+  return sequenceState.templates.find((template) => template.id === templateId) || null;
+}
+
+function getTemplateDefaultStyle() {
+  return normalizeSequenceStyle(detectedMood.textContent) || DEFAULT_STYLE;
+}
+
+function getTemplateTrackInputValue(template = null) {
+  return template?.track?.url || template?.track?.id || "";
+}
+
+function getPreferredTemplateId() {
+  return playbackState.currentTemplateId || sequenceState.bestMatch?.id || sequenceState.templates[0]?.id || null;
+}
+
+function setTemplateStudioMessage(text, tone = "muted") {
+  if (!templateStudioMessage) return;
+  templateStudioMessage.textContent = text || "시퀀스 흐름을 여기서 한 번에 관리할 수 있습니다.";
+  if (tone === "muted") {
+    delete templateStudioMessage.dataset.tone;
+    return;
+  }
+  templateStudioMessage.dataset.tone = tone;
+}
+
+function fillTemplateForm(template = null) {
+  if (!templateNameField || !templateStyleField || !templateTrackField) return;
+  templateNameField.value = template?.name || `dance-${sequenceState.templates.length + 1}`;
+  templateStyleField.value = template?.style || getTemplateDefaultStyle();
+  templateTrackField.value = getTemplateTrackInputValue(template);
+}
+
+function renderTemplateLibrary() {
+  if (!templateLibraryList || !templateLibrarySummary || !templateLibraryEmpty) return;
+
+  templateLibrarySummary.textContent = `템플릿 ${sequenceState.templates.length}개`;
+  if (!sequenceState.templates.length) {
+    templateLibraryList.innerHTML = "";
+    templateLibraryEmpty.hidden = false;
+    return;
+  }
+
+  templateLibraryEmpty.hidden = true;
+  const selectedTemplateId = templateStudioState.selectedTemplateId;
+  const isDeleteMode = templateStudioState.mode === "delete";
+
+  templateLibraryList.innerHTML = sequenceState.templates
+    .map((template, index) => {
+      const isSelected = selectedTemplateId === template.id;
+      const classes = ["template-item"];
+      if (isSelected) classes.push("is-selected");
+      if (isSelected && isDeleteMode) classes.push("is-delete");
+
+      return `
+        <article class="${classes.join(" ")}" data-template-select="${escapeHtml(template.id)}">
+          <div class="template-item-top">
+            <div>
+              <p class="template-item-name">${escapeHtml(template.name)}</p>
+              <p class="template-item-meta">
+                <span class="template-item-style">${escapeHtml(template.style)}</span>
+                <span>${escapeHtml(describeTemplateTrack(template))}</span>
+              </p>
+            </div>
+            <span class="template-item-index">${String(index + 1).padStart(2, "0")}</span>
+          </div>
+          <div class="template-item-actions">
+            <button class="template-item-button" type="button" data-template-action="edit" data-template-id="${escapeHtml(template.id)}">Edit</button>
+            <button class="template-item-button danger" type="button" data-template-action="delete" data-template-id="${escapeHtml(template.id)}">Delete</button>
+          </div>
+        </article>
+      `;
+    })
+    .join("");
+}
+
+function syncTemplateStudio() {
+  if (!templateStudio) return;
+
+  const mode = templateStudioState.mode;
+  const selectedTemplate = getTemplateById(templateStudioState.selectedTemplateId);
+  const isDeleteMode = mode === "delete";
+  const hasTemplates = sequenceState.templates.length > 0;
+
+  if (templateStudioMode) {
+    templateStudioMode.textContent =
+      mode === "record" ? "Sequence Capture" : mode === "delete" ? "Template Removal" : "Template Edit";
+  }
+
+  if (templateStudioTitle) {
+    templateStudioTitle.textContent =
+      mode === "record" ? "Template Capture" : mode === "delete" ? "Remove Template" : "Refine Template";
+  }
+
+  if (templateStudioDescription) {
+    templateStudioDescription.textContent =
+      mode === "record"
+        ? "춤을 기록하기 전에 이름, 매핑 스타일, 지정 곡을 현재 무드에 맞게 정합니다."
+        : mode === "delete"
+          ? "삭제할 템플릿을 고르면 라이브러리와 로컬 저장에서 즉시 제거됩니다."
+          : "저장된 템플릿의 이름, 스타일, 지정 곡을 여기서 다시 다듬을 수 있습니다.";
+  }
+
+  if (templateFormNote) {
+    templateFormNote.textContent = isDeleteMode
+      ? "삭제 모드에서는 필드가 잠기고 선택된 템플릿만 제거됩니다."
+      : "Billie Jean, Gangnam Style 모두 Pop으로 매핑하고 곡만 따로 연결해도 됩니다.";
+  }
+
+  if (templateFormSubmitButton) {
+    templateFormSubmitButton.textContent =
+      mode === "record" ? "시퀀스 기록 시작" : mode === "delete" ? "선택 템플릿 삭제" : "템플릿 저장";
+    templateFormSubmitButton.classList.toggle("danger", isDeleteMode);
+  }
+
+  if (templateNameField) templateNameField.disabled = isDeleteMode;
+  if (templateStyleField) templateStyleField.disabled = isDeleteMode;
+  if (templateTrackField) templateTrackField.disabled = isDeleteMode;
+
+  if (mode === "record") {
+    fillTemplateForm(null);
+  } else if (selectedTemplate) {
+    fillTemplateForm(selectedTemplate);
+  } else if (hasTemplates) {
+    templateStudioState.selectedTemplateId = sequenceState.templates[0].id;
+    fillTemplateForm(sequenceState.templates[0]);
+  }
+
+  renderTemplateLibrary();
+}
+
+function openTemplateStudio(mode = "record", templateId = null) {
+  if (!templateStudio) return;
+
+  templateStudioState.open = true;
+  templateStudioState.mode = mode;
+  templateStudioState.selectedTemplateId = mode === "record" ? null : templateId || getPreferredTemplateId();
+
+  templateStudio.hidden = false;
+  templateStudio.setAttribute("aria-hidden", "false");
+  syncTemplateStudio();
+  setTemplateStudioMessage(
+    mode === "record"
+      ? "새 시퀀스를 등록할 준비가 됐습니다."
+      : mode === "delete"
+        ? "삭제할 템플릿을 선택해 주세요."
+        : "수정할 템플릿을 선택해 주세요.",
+    "muted"
+  );
+
+  window.requestAnimationFrame(() => {
+    if (mode === "delete") {
+      templateFormSubmitButton?.focus();
+      return;
+    }
+    templateNameField?.focus();
+    templateNameField?.select();
+  });
+}
+
+function closeTemplateStudio() {
+  if (!templateStudio) return;
+  templateStudio.hidden = true;
+  templateStudio.setAttribute("aria-hidden", "true");
+  templateStudioState.open = false;
+  templateStudioState.mode = "record";
+  templateStudioState.selectedTemplateId = null;
+  setTemplateStudioMessage("시퀀스 흐름을 여기서 한 번에 관리할 수 있습니다.");
+}
+
+function readTemplateFormSetup() {
+  const templateName = templateNameField?.value.trim() || "";
+  const style = normalizeSequenceStyle(templateStyleField?.value || "");
+  const rawTrackValue = templateTrackField?.value.trim() || "";
+
+  if (!templateName) {
+    setTemplateStudioMessage("템플릿 이름을 먼저 입력해 주세요.", "error");
+    templateNameField?.focus();
+    return null;
+  }
+
+  if (!style) {
+    setTemplateStudioMessage("매핑 스타일은 Waltz, EDM, Pop 중 하나여야 합니다.", "error");
+    templateStyleField?.focus();
+    return null;
+  }
+
+  const track = normalizeTemplateTrack(rawTrackValue, templateName);
+  if (rawTrackValue && !track) {
+    setTemplateStudioMessage("YouTube URL 또는 11자리 영상 ID만 연결할 수 있습니다.", "error");
+    templateTrackField?.focus();
+    return null;
+  }
+
+  return {
+    id: templateStudioState.mode === "edit" ? templateStudioState.selectedTemplateId : `template-${slugifyTemplateName(templateName)}-${Date.now()}`,
+    name: templateName,
+    style,
+    track,
+  };
+}
+
+function updateTemplateRecord(templateId, setup) {
+  const currentTemplate = getTemplateById(templateId);
+  if (!currentTemplate) {
+    setTemplateStudioMessage("수정할 템플릿을 찾지 못했습니다.", "error");
+    return;
+  }
+
+  const updatedTemplate = normalizeSequenceTemplate({
+    ...currentTemplate,
+    ...setup,
+    updatedAt: new Date().toISOString(),
+  });
+  if (!updatedTemplate) {
+    setTemplateStudioMessage("템플릿 값을 다시 확인해 주세요.", "error");
+    return;
+  }
+
+  sequenceState.templates = sequenceState.templates.map((template) => {
+    return template.id === templateId ? updatedTemplate : template;
+  });
+
+  if (sequenceState.bestMatch?.id === templateId) {
+    sequenceState.bestMatch = { ...sequenceState.bestMatch, ...updatedTemplate };
+  }
+
+  if (playbackState.currentTemplateId === templateId) {
+    playbackState.currentTemplateId = updatedTemplate.id;
+    playbackState.youtubeEntry = updatedTemplate.track ? buildTemplateYoutubeEntry(updatedTemplate) : null;
+    playbackState.currentTrackKey = playbackState.youtubeEntry
+      ? getYoutubeEntryKey(updatedTemplate.style, playbackState.youtubeEntry)
+      : null;
+  }
+
+  templateStudioState.mode = "edit";
+  templateStudioState.selectedTemplateId = updatedTemplate.id;
+  saveSequenceTemplates();
+  updateSequenceUi();
+  syncTemplateStudio();
+  setTemplateStudioMessage(`템플릿 저장 완료 · ${updatedTemplate.name}`, "success");
+  speakStatusSafe(`템플릿 저장: ${updatedTemplate.name}`);
+  closeTemplateStudio();
+}
+
+function removeTemplateRecord(templateId) {
+  const currentTemplate = getTemplateById(templateId);
+  if (!currentTemplate) {
+    setTemplateStudioMessage("삭제할 템플릿을 찾지 못했습니다.", "error");
+    return;
+  }
+
+  sequenceState.templates = sequenceState.templates.filter((template) => template.id !== templateId);
+
+  if (sequenceState.bestMatch?.id === templateId) {
+    sequenceState.bestMatch = null;
+  }
+
+  if (playbackState.currentTemplateId === templateId) {
+    playbackState.currentTemplateId = null;
+    playbackState.currentTrackKey = null;
+    playbackState.youtubeEntry = null;
+  }
+
+  if (sequenceState.templates.length) {
+    templateStudioState.mode = "edit";
+    templateStudioState.selectedTemplateId = getPreferredTemplateId();
+  } else {
+    templateStudioState.mode = "record";
+    templateStudioState.selectedTemplateId = null;
+  }
+
+  saveSequenceTemplates();
+  updateSequenceUi();
+  syncTemplateStudio();
+  setTemplateStudioMessage(`템플릿 삭제 완료 · ${currentTemplate.name}`, "success");
+  speakStatusSafe(`템플릿 삭제: ${currentTemplate.name}`);
+}
+
+function handleTemplateStudioSubmit(event) {
+  event.preventDefault();
+
+  if (templateStudioState.mode === "delete") {
+    if (!templateStudioState.selectedTemplateId) {
+      setTemplateStudioMessage("삭제할 템플릿을 먼저 선택해 주세요.", "error");
+      return;
+    }
+    removeTemplateRecord(templateStudioState.selectedTemplateId);
+    return;
+  }
+
+  const setup = readTemplateFormSetup();
+  if (!setup) return;
+
+  if (templateStudioState.mode === "edit") {
+    updateTemplateRecord(templateStudioState.selectedTemplateId, setup);
+    return;
+  }
+
+  startSequenceRecording(setup);
+}
+
+function handleTemplateLibraryClick(event) {
+  const actionTarget = event.target.closest("[data-template-action]");
+  if (actionTarget) {
+    const templateId = actionTarget.dataset.templateId;
+    if (!templateId) return;
+
+    if (actionTarget.dataset.templateAction === "delete") {
+      templateStudioState.mode = "delete";
+      templateStudioState.selectedTemplateId = templateId;
+      syncTemplateStudio();
+      setTemplateStudioMessage("하단 버튼을 누르면 선택한 템플릿이 삭제됩니다.", "error");
+      return;
+    }
+
+    templateStudioState.mode = "edit";
+    templateStudioState.selectedTemplateId = templateId;
+    syncTemplateStudio();
+    setTemplateStudioMessage("선택한 템플릿을 수정 중입니다.", "muted");
+    return;
+  }
+
+  const selectTarget = event.target.closest("[data-template-select]");
+  if (!selectTarget) return;
+
+  templateStudioState.selectedTemplateId = selectTarget.dataset.templateSelect;
+  if (templateStudioState.mode !== "delete") {
+    templateStudioState.mode = "edit";
+  }
+  syncTemplateStudio();
+}
+
+function updateSequenceUi() {
+  const templateCount = sequenceState.templates.length;
+  const hasTemplates = templateCount > 0;
+  const isRecording = Boolean(sequenceState.recording);
+
+  if (recordTemplateButton) {
+    recordTemplateButton.textContent = sequenceState.recording ? "기록 종료" : "시퀀스 기록";
+  }
+  if (exportTemplatesButton) {
+    exportTemplatesButton.disabled = !hasTemplates;
+  }
+  if (editTemplateButton) {
+    editTemplateButton.disabled = !hasTemplates || isRecording;
+  }
+  if (deleteTemplateButton) {
+    deleteTemplateButton.disabled = !hasTemplates || isRecording;
+  }
+
+  if (sequenceState.recording) {
+    const recordedSeconds = Math.max(0, (performance.now() - sequenceState.recording.startedAt) / 1000);
+    setSequenceStatus(`기록 중 · ${sequenceState.recording.name} · ${recordedSeconds.toFixed(1)}초`);
+  } else if (sequenceState.bestMatch?.matched) {
+    setSequenceStatus(`${sequenceState.bestMatch.name} ${Math.round(sequenceState.bestMatch.confidence * 100)}%`);
+  } else {
+    setSequenceStatus(`템플릿 ${templateCount}개`);
+  }
+
+  if (templateStudioState.open) {
+    renderTemplateLibrary();
+    if (templateLibrarySummary) {
+      templateLibrarySummary.textContent = `템플릿 ${templateCount}개`;
+    }
+    if (templateLibraryEmpty) {
+      templateLibraryEmpty.hidden = templateCount > 0;
+    }
+  } else if (templateLibrarySummary) {
+    templateLibrarySummary.textContent = `템플릿 ${templateCount}개`;
+  }
+}
+
+function mergeImportedTemplates(payload) {
+  const imported = Array.isArray(payload?.templates) ? payload.templates : Array.isArray(payload) ? payload : [];
+  if (!imported.length) {
+    openTemplateStudio("edit", getPreferredTemplateId());
+    setTemplateStudioMessage("불러올 템플릿이 없습니다.", "error");
+    speakStatusSafe("템플릿 불러오기 실패");
+    return;
+  }
+
+  const validTemplates = imported.map((template) => normalizeSequenceTemplate(template)).filter(Boolean);
+  if (!validTemplates.length) {
+    openTemplateStudio("edit", getPreferredTemplateId());
+    setTemplateStudioMessage("템플릿 JSON 형식이 올바르지 않습니다.", "error");
+    speakStatusSafe("템플릿 불러오기 실패");
+    return;
+  }
+
+  const deduped = new Map(sequenceState.templates.map((template) => [template.id, template]));
+  validTemplates.forEach((template) => {
+    deduped.set(template.id, template);
+  });
+
+  sequenceState.templates = Array.from(deduped.values());
+  templateStudioState.selectedTemplateId = validTemplates[0]?.id || getPreferredTemplateId();
+  saveSequenceTemplates();
+  updateSequenceUi();
+  openTemplateStudio("edit", templateStudioState.selectedTemplateId);
+  setTemplateStudioMessage(`템플릿 ${validTemplates.length}개를 라이브러리에 추가했습니다.`, "success");
+  speakStatusSafe(`템플릿 ${validTemplates.length}개 불러옴`);
+}
+
+function startSequenceRecording(setup = null) {
+  const nextSetup = setup || readTemplateFormSetup();
+  if (!nextSetup) return;
+
+  sequenceState.recording = {
+    ...nextSetup,
+    startedAt: performance.now(),
+    frames: [],
+  };
+  sequenceState.bestMatch = null;
+  updateSequenceUi();
+  closeTemplateStudio();
+  speakStatusSafe(`시퀀스 기록 시작: ${nextSetup.name}`);
+}
+
+function stopSequenceRecording() {
+  if (!sequenceState.recording) return;
+
+  const recording = sequenceState.recording;
+  sequenceState.recording = null;
+
+  if (recording.frames.length < SEQUENCE_MIN_RECORDING_FRAMES) {
+    updateSequenceUi();
+    openTemplateStudio("record");
+    fillTemplateForm(recording);
+    setTemplateStudioMessage("시퀀스가 너무 짧습니다. 2초 이상 다시 기록해 주세요.", "error");
+    speakStatusSafe("시퀀스 기록 실패");
+    return;
+  }
+
+  const durationMs = recording.frames[recording.frames.length - 1].time || recording.frames.length * SEQUENCE_SAMPLE_MS;
+  const template = normalizeSequenceTemplate({
+    id: recording.id,
+    name: recording.name,
+    style: recording.style,
+    track: recording.track || null,
+    durationMs: Math.round(durationMs),
+    createdAt: new Date().toISOString(),
+    frames: resampleSequenceFrames(
+      recording.frames.map((frame) => frame.values),
+      SEQUENCE_TARGET_FRAMES
+    ),
+  });
+
+  if (!template) {
+    openTemplateStudio("record");
+    setTemplateStudioMessage("시퀀스 템플릿을 정리하는 중 문제가 생겼습니다.", "error");
+    speakStatusSafe("시퀀스 기록 실패");
+    return;
+  }
+
+  sequenceState.templates = [...sequenceState.templates.filter((item) => item.id !== template.id), template];
+  saveSequenceTemplates();
+  updateSequenceUi();
+  openTemplateStudio("edit", template.id);
+  setTemplateStudioMessage(`시퀀스 저장 완료 · ${template.name}`, "success");
+  speakStatusSafe(`시퀀스 저장: ${template.name}`);
+}
+
+function toggleSequenceRecording() {
+  if (sequenceState.recording) {
+    stopSequenceRecording();
+    return;
+  }
+  openTemplateStudio("record");
+}
+
+function editSequenceTemplate(templateId = null) {
+  if (!sequenceState.templates.length) {
+    openTemplateStudio("record");
+    setTemplateStudioMessage("먼저 저장된 템플릿이 있어야 수정할 수 있습니다.", "error");
+    return;
+  }
+  openTemplateStudio("edit", templateId || getPreferredTemplateId());
+}
+
+function deleteSequenceTemplate(templateId = null) {
+  if (!sequenceState.templates.length) {
+    openTemplateStudio("record");
+    setTemplateStudioMessage("삭제할 템플릿이 아직 없습니다.", "error");
+    return;
+  }
+  openTemplateStudio("delete", templateId || getPreferredTemplateId());
+}
+
+function updateCandidateDisplay(label = "없음", detail = "현재 장르 유지 중") {
   candidateMood.textContent = label;
   candidateTimer.textContent = detail;
 }
@@ -537,10 +1636,14 @@ function resetAnalysisState() {
   analysis.smoothedCross = 0;
   analysis.smoothedVerticality = 0;
   analysis.mood = "Standby";
-  analysis.motion = "Observe";
+  analysis.motion = "준비 중";
   analysis.visibility = 0;
   analysis.liveBuffer = [];
   analysis.latestAggregate = null;
+  sequenceState.liveFrames = [];
+  sequenceState.lastLiveSampleAt = 0;
+  sequenceState.bestMatch = null;
+  updateSequenceUi();
 }
 
 function ensureAudioContext() {
@@ -613,15 +1716,19 @@ function ensureYoutubeApi() {
   youtubeState.apiRequested = true;
 }
 
-function queueYoutubeRequest(style, forceRandom = false) {
-  youtubeState.pendingRequest = { style, forceRandom };
+function queueYoutubeRequest(style, forceRandom = false, preferredEntry = null) {
+  youtubeState.pendingRequest = {
+    style,
+    forceRandom,
+    preferredEntry: preferredEntry ? { ...preferredEntry } : null,
+  };
 }
 
 function flushYoutubeRequest() {
   if (!youtubeState.pendingRequest || !youtubeState.playerReady) return;
   const pending = youtubeState.pendingRequest;
   youtubeState.pendingRequest = null;
-  playYoutubeForStyle(pending.style, pending.forceRandom);
+  playYoutubeForSelection(pending.style, pending.forceRandom, pending.preferredEntry);
 }
 
 function initYoutubePlayer() {
@@ -644,7 +1751,8 @@ function initYoutubePlayer() {
       onStateChange: (event) => {
         if (!window.YT?.PlayerState) return;
         if (event.data === window.YT.PlayerState.ENDED && playbackState.active && playbackState.mode === "youtube" && playbackState.currentStyle) {
-          playYoutubeForStyle(playbackState.currentStyle, true);
+          const replayEntry = playbackState.youtubeEntry?.templateId ? playbackState.youtubeEntry : null;
+          playYoutubeForSelection(playbackState.currentStyle, true, replayEntry);
         }
       },
       onAutoplayBlocked: () => {
@@ -669,22 +1777,35 @@ function hideYoutubePlayer() {
   youtubePanel.hidden = true;
   playerSource.textContent = "생성 음악";
   playbackState.youtubeVideoId = null;
+  playbackState.youtubeEntry = null;
+  playbackState.currentTemplateId = null;
+  playbackState.currentTrackKey = null;
 }
 
-function stopPlayback(reason = "음악 정지됨") {
+function stopPlayback(reason = "") {
   playbackState.active = false;
   playbackState.pendingStart = false;
   playbackState.startRequestedAt = 0;
   playbackState.mode = "idle";
   playbackState.currentStyle = null;
+  playbackState.youtubeEntry = null;
+  playbackState.currentTemplateId = null;
+  playbackState.currentTrackKey = null;
   resetStyleDecisionState(DEFAULT_STYLE);
   resetXPoseGesture();
   stopGeneratedAudio(false);
   hideYoutubePlayer();
   captureButton.disabled = false;
   setEngineUi(false);
-  updateCandidateDisplay("None", "현재 장르 유지 중");
-  speakStatusSafe(reason);
+  detectedMood.textContent = INACTIVE_DETECTED_STYLE;
+  setMotionLabel("시퀀스 대기");
+  moodStatus.textContent = "시퀀스 대기";
+  updateCandidateDisplay("없음", "재생 전 대기");
+  if (reason) {
+    speakStatusSafe(reason);
+  } else {
+    setCaptureStatusText("무대 대기 중");
+  }
 }
 
 function pickRandomYoutubeEntry(style) {
@@ -708,6 +1829,54 @@ function extractVideoIdFromUrl(url) {
     }
   } catch {}
   return null;
+}
+
+function getYoutubeEntryVideoId(entry) {
+  if (!entry) return null;
+  return entry.id || extractVideoIdFromUrl(entry.url);
+}
+
+function getYoutubeEntryKey(style, entry) {
+  const videoId = getYoutubeEntryVideoId(entry);
+  if (!videoId) return null;
+  const startSeconds = Number(entry?.startSeconds) || 0;
+  const templateId = entry?.templateId || "style";
+  return `${style}:${templateId}:${videoId}:${startSeconds}`;
+}
+
+function normalizeTrackLookupText(value) {
+  return String(value || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9가-힣]+/g, "");
+}
+
+function findLibraryTrackForTemplate(template) {
+  const templateName = normalizeTrackLookupText(template?.name);
+  if (!templateName) return null;
+
+  const primaryPool = youtubeLibrary[template?.style] || [];
+  const allPools = Object.values(youtubeLibrary).flat();
+  const lookupPool = [...primaryPool, ...allPools.filter((entry) => !primaryPool.includes(entry))];
+
+  return (
+    lookupPool.find((entry) => {
+      const title = normalizeTrackLookupText(entry?.title);
+      return title && (title.includes(templateName) || templateName.includes(title));
+    }) || null
+  );
+}
+
+function buildTemplateYoutubeEntry(template) {
+  const directTrack = normalizeTemplateTrack(template?.track, template?.name || "Sequence Track");
+  const inferredTrack = directTrack ? null : findLibraryTrackForTemplate(template);
+  const track = directTrack || normalizeTemplateTrack(inferredTrack, template?.name || "Sequence Track");
+  if (!track) return null;
+  return {
+    ...track,
+    templateId: template.id || null,
+    title: track.title || template.name || "Sequence Track",
+    source: track.source || "Template",
+  };
 }
 
 function playYoutubeForStyle(style, forceRandom = false) {
@@ -777,6 +1946,94 @@ function syncPlaybackForStyle(style, forceRandom = false) {
   }
 
   setQueuedStyle(style);
+}
+
+function playYoutubeForSelection(style, forceRandom = false, preferredEntry = null, templateIdOverride = null) {
+  const rawEntry = preferredEntry || pickRandomYoutubeEntry(style);
+  if (!rawEntry) return false;
+  const entry = templateIdOverride && !rawEntry.templateId ? { ...rawEntry, templateId: templateIdOverride } : rawEntry;
+
+  const videoId = getYoutubeEntryVideoId(entry);
+  if (!videoId) return false;
+
+  const trackKey = getYoutubeEntryKey(style, entry);
+  if (!forceRandom && playbackState.mode === "youtube" && playbackState.currentStyle === style && playbackState.currentTrackKey === trackKey) {
+    return true;
+  }
+
+  ensureYoutubeApi();
+  if (window.YT?.Player && !youtubeState.apiReady) {
+    youtubeState.apiReady = true;
+  }
+  if (youtubeState.apiReady && !youtubeState.player) {
+    initYoutubePlayer();
+  }
+
+  if (!youtubeState.playerReady) {
+    queueYoutubeRequest(style, forceRandom, entry);
+    youtubePanel.hidden = false;
+    playerSource.textContent = `${style} / YouTube loading`;
+    playbackState.mode = "youtube";
+    playbackState.currentStyle = style;
+    playbackState.youtubeVideoId = videoId;
+    playbackState.youtubeEntry = { ...entry };
+    playbackState.currentTemplateId = entry.templateId || templateIdOverride || null;
+    playbackState.currentTrackKey = null;
+    setEngineUi(true);
+    speakStatusSafe(`YouTube 로드 중: ${style}`);
+    return true;
+  }
+
+  try {
+    youtubeState.player.loadVideoById({
+      videoId,
+      startSeconds: entry.startSeconds || 0,
+    });
+  } catch {
+    queueYoutubeRequest(style, forceRandom, entry);
+    return false;
+  }
+
+  youtubePanel.hidden = false;
+  playerSource.textContent = `${style} / ${entry.title || entry.source || "YouTube"}`;
+  playbackState.mode = "youtube";
+  playbackState.currentStyle = style;
+  playbackState.youtubeVideoId = videoId;
+  playbackState.youtubeEntry = { ...entry };
+  playbackState.currentTemplateId = entry.templateId || templateIdOverride || null;
+  playbackState.currentTrackKey = trackKey;
+  setEngineUi(true);
+  speakStatusSafe(`YouTube 재생: ${entry.title || style}`);
+  return true;
+}
+
+function syncPlaybackForSelection(style, forceRandom = false, sequenceMatch = null) {
+  if (!playbackState.active) return;
+  if (!sequenceMatch?.matched) return;
+
+  const activeTemplateId = sequenceMatch.id;
+  const templateEntry = buildTemplateYoutubeEntry(sequenceMatch);
+  if (templateEntry) {
+    stopGeneratedAudio(false);
+    playYoutubeForSelection(style, forceRandom, templateEntry, activeTemplateId);
+    return;
+  }
+
+  const hasYoutubeTracks = (youtubeLibrary[style] || []).length > 0;
+  if (hasYoutubeTracks) {
+    stopGeneratedAudio(false);
+    playYoutubeForSelection(style, forceRandom, null, activeTemplateId);
+    return;
+  }
+
+  playbackState.currentTemplateId = activeTemplateId;
+  playbackState.currentStyle = style;
+  playbackState.currentTrackKey = null;
+  playbackState.youtubeEntry = null;
+  playbackState.mode = "idle";
+  stopGeneratedAudio(false);
+  hideYoutubePlayer();
+  playerSource.textContent = "연결 곡 없음";
 }
 
 function scheduleTone(ctx, destination, frequency, start, duration, type, gainValue) {
@@ -1397,12 +2654,12 @@ function clearStyleCandidate() {
   updateCandidateDisplay();
 }
 
-function commitStyleSwitch(style, forceRandom = false) {
+function commitStyleSwitch(style, forceRandom = false, sequenceMatch = null) {
   styleDecisionState.currentStyle = style;
   styleDecisionState.lastCommittedAt = performance.now();
   clearStyleCandidate();
   setQueuedStyle(style);
-  syncPlaybackForStyle(style, forceRandom);
+  syncPlaybackForSelection(style, forceRandom, sequenceMatch);
 }
 
 function similarityScore(features, target, weights) {
@@ -1415,6 +2672,7 @@ function similarityScore(features, target, weights) {
   return weightSum ? total / weightSum : 0;
 }
 
+<<<<<<< HEAD
 function scoreRangeMatch(value, min, max, softness = 0.26) {
   if (value >= min && value <= max) return 1;
   const distanceToRange = value < min ? min - value : value - max;
@@ -1488,6 +2746,9 @@ const STYLE_CLASSIFIERS = {
 };
 
 function classifyStyle(features = analysis) {
+=======
+function updateFeatureMeters(features = analysis) {
+>>>>>>> codex/front
   const profile = {
     smoothedEnergy: clamp(features.smoothedEnergy, 0, 1),
     smoothedBounce: clamp(features.smoothedBounce, 0, 1),
@@ -1498,6 +2759,7 @@ function classifyStyle(features = analysis) {
     smoothedVerticality: clamp(features.smoothedVerticality, 0, 1),
   };
 
+<<<<<<< HEAD
   const motionSignal = clamp(
     profile.smoothedEnergy * 0.46 +
       profile.smoothedBounce * 0.2 +
@@ -1570,6 +2832,30 @@ function classifyStyle(features = analysis) {
   updateMetricReadout(profile);
 
   return { style, ranking: ranked };
+=======
+  energyStatus.textContent = `에너지 ${Math.round(profile.smoothedEnergy * 100)}%`;
+  opennessValue.textContent = `${Math.round(profile.smoothedOpenness * 100)}%`;
+  bounceValue.textContent = `${Math.round(clamp(profile.smoothedBounce * 900, 0, 100))}%`;
+
+  return profile;
+}
+
+function classifyStyle(features = analysis, sequenceMatch = null) {
+  updateFeatureMeters(features);
+
+  if (!sequenceMatch?.matched || !sequenceMatch.style) {
+    return { style: null, ranking: [], sequenceMatch: null };
+  }
+
+  const style = sequenceMatch.style;
+  analysis.mood = style;
+  analysis.motion = `시퀀스 ·\n${sequenceMatch.name}`;
+  detectedMood.textContent = style;
+  setMotionLabel(analysis.motion, true);
+  moodStatus.textContent = `시퀀스 인식: ${sequenceMatch.name}`;
+  const ranking = [[style, 1], ...SEQUENCE_ALLOWED_STYLES.filter((label) => label !== style).map((label) => [label, 0])];
+  return { style, ranking, sequenceMatch };
+>>>>>>> codex/front
 }
 
 function aggregateLiveBuffer() {
@@ -1605,111 +2891,73 @@ function updateLiveStyle() {
   const aggregate = aggregateLiveBuffer();
   if (!aggregate) return;
   analysis.latestAggregate = aggregate;
-  const { style, ranking } = classifyStyle(aggregate);
+  const sequenceMatch = evaluateBestSequenceMatch();
+  const { style } = classifyStyle(aggregate, sequenceMatch);
 
   if (playbackState.pendingStart) {
-    styleDecisionState.currentStyle = style;
-    clearStyleCandidate();
-    detectedMood.textContent = style;
-    const elapsed = performance.now() - playbackState.startRequestedAt;
-    const remaining = Math.max(0, INITIAL_ANALYSIS_MS - elapsed);
-    updateCandidateDisplay(style, remaining > 0 ? `첫 곡 분석 중 · ${Math.ceil(remaining / 1000)}초` : "첫 곡 확정 중");
-
-    if (remaining > 0) {
-      moodStatus.textContent = `첫 곡 분석 중 · ${Math.ceil(remaining / 1000)}초`;
-      speakStatusSafe(`첫 곡 분석 중: ${style}`);
+    if (!style || !sequenceMatch?.matched) {
+      clearStyleCandidate();
+      detectedMood.textContent = INACTIVE_DETECTED_STYLE;
+      setMotionLabel("시퀀스 대기");
+      moodStatus.textContent = "시퀀스 입력 대기";
+      updateCandidateDisplay("없음", "저장된 시퀀스를 맞춰 주세요");
       return;
     }
 
+    clearStyleCandidate();
     playbackState.pendingStart = false;
     playbackState.active = true;
     transportState.currentStyle = style;
     resetStyleDecisionState(style);
-    styleDecisionState.lastCommittedAt = performance.now() - STYLE_SWITCH_COOLDOWN_MS;
-    commitStyleSwitch(style, true);
+    commitStyleSwitch(style, true, sequenceMatch);
     setEngineUi(true);
     captureButton.disabled = false;
     detectedMood.textContent = style;
-    moodStatus.textContent = `첫 곡 시작: ${style}`;
-    updateCandidateDisplay(style, "첫 곡 확정");
+    moodStatus.textContent = `시퀀스 시작: ${sequenceMatch.name}`;
+    updateCandidateDisplay(style, `${sequenceMatch.name} 재생 시작`);
     return;
   }
 
   if (!playbackState.active) {
-    styleDecisionState.currentStyle = style;
     clearStyleCandidate();
+    detectedMood.textContent = INACTIVE_DETECTED_STYLE;
+    setMotionLabel(sequenceMatch?.matched ? `시퀀스 ·\n${sequenceMatch.name}` : "시퀀스 대기", Boolean(sequenceMatch?.matched));
+    moodStatus.textContent = sequenceMatch?.matched ? `시퀀스 감지: ${sequenceMatch.name}` : "시퀀스 대기";
+    updateCandidateDisplay("없음", sequenceMatch?.matched ? `${sequenceMatch.name} 준비 완료` : "재생 전 대기");
+    return;
+  }
+
+  const currentStyle = playbackState.currentStyle || styleDecisionState.currentStyle || DEFAULT_STYLE;
+  const currentTemplate = getTemplateById(playbackState.currentTemplateId);
+  const currentTemplateName = currentTemplate?.name || playbackState.youtubeEntry?.title || currentStyle;
+  const isCurrentTemplateMatch = Boolean(sequenceMatch?.matched && playbackState.currentTemplateId === sequenceMatch.id);
+  const shouldSwitchTemplateTrack = Boolean(sequenceMatch?.matched && sequenceMatch.id !== playbackState.currentTemplateId);
+  const shouldHoldTemplateTrack =
+    Boolean(playbackState.currentTemplateId) &&
+    (isCurrentTemplateMatch || !sequenceMatch?.matched);
+
+  if (shouldSwitchTemplateTrack) {
+    commitStyleSwitch(style, true, sequenceMatch);
     detectedMood.textContent = style;
-    moodStatus.textContent = `감지 스타일: ${style}`;
-    updateCandidateDisplay("None", "재생 전 대기");
+    moodStatus.textContent = `지정곡 전환: ${sequenceMatch.name}`;
+    updateCandidateDisplay(style, "지정곡 전환");
     return;
   }
 
-  const currentStyle = styleDecisionState.currentStyle || playbackState.currentStyle || DEFAULT_STYLE;
-  const topScore = ranking[0]?.[1] ?? 0;
-  const secondScore = ranking[1]?.[1] ?? 0;
-  const scoreGap = topScore - secondScore;
-  const now = performance.now();
-
-  if (style === currentStyle) {
-    if (
-      styleDecisionState.candidateStyle &&
-      now - styleDecisionState.candidateLastSeenAt <= STYLE_SWITCH_CANDIDATE_GRACE_MS
-    ) {
-      moodStatus.textContent = `변경 후보 유지: ${styleDecisionState.candidateStyle}`;
-      detectedMood.textContent = currentStyle;
-      updateCandidateDisplay(styleDecisionState.candidateStyle, "후보 흔들림 보정 중");
-      return;
-    }
+  if (shouldHoldTemplateTrack) {
     clearStyleCandidate();
     detectedMood.textContent = currentStyle;
-    moodStatus.textContent = `스타일 유지: ${currentStyle}`;
+    setMotionLabel(currentTemplate ? `시퀀스 ·\n${currentTemplate.name}` : "시퀀스 유지", Boolean(currentTemplate));
+    moodStatus.textContent = `시퀀스 유지: ${currentTemplateName}`;
+    updateCandidateDisplay("없음", `${currentTemplateName} 재생 유지`);
     return;
   }
 
-  if (scoreGap < STYLE_SWITCH_SCORE_GAP) {
-    if (
-      styleDecisionState.candidateStyle &&
-      now - styleDecisionState.candidateLastSeenAt <= STYLE_SWITCH_CANDIDATE_GRACE_MS
-    ) {
-      moodStatus.textContent = `변경 후보 유지: ${styleDecisionState.candidateStyle}`;
-      detectedMood.textContent = currentStyle;
-      updateCandidateDisplay(styleDecisionState.candidateStyle, "점수 재확인 중");
-      return;
-    }
-    clearStyleCandidate();
-    detectedMood.textContent = currentStyle;
-    moodStatus.textContent = `스타일 유지: ${currentStyle}`;
-    return;
-  }
-
-  if (styleDecisionState.candidateStyle !== style) {
-    styleDecisionState.candidateStyle = style;
-    styleDecisionState.candidateSince = now;
-  }
-  styleDecisionState.candidateLastSeenAt = now;
-
-  const holdElapsed = now - styleDecisionState.candidateSince;
-  const cooldownElapsed = now - styleDecisionState.lastCommittedAt;
-  const holdRemaining = Math.max(0, STYLE_SWITCH_HOLD_MS - holdElapsed);
-  const cooldownRemaining = Math.max(0, STYLE_SWITCH_COOLDOWN_MS - cooldownElapsed);
-
+  clearStyleCandidate();
   detectedMood.textContent = currentStyle;
-  if (cooldownRemaining > 0) {
-    moodStatus.textContent = `스타일 유지: ${currentStyle} · ${Math.ceil(cooldownRemaining / 1000)}초 잠금`;
-    updateCandidateDisplay(style, `잠금 중 · ${Math.ceil(cooldownRemaining / 1000)}초`);
-    return;
-  }
-
-  if (holdRemaining > 0) {
-    moodStatus.textContent = `변경 후보: ${style} · ${Math.ceil(holdRemaining / 1000)}초 더 유지`;
-    updateCandidateDisplay(style, `${Math.ceil(holdRemaining / 1000)}초 더 유지`);
-    return;
-  }
-
-  commitStyleSwitch(style, true);
-  detectedMood.textContent = style;
-  moodStatus.textContent = `스타일 전환: ${style}`;
-  updateCandidateDisplay(style, "전환 완료");
+  setMotionLabel("시퀀스 대기");
+  moodStatus.textContent = "시퀀스 입력 대기";
+  updateCandidateDisplay("없음", "다음 시퀀스를 기다리는 중");
 }
 
 function getActiveFeatures() {
@@ -1787,6 +3035,7 @@ function resetXPoseGesture() {
 }
 
 function isXPoseGesture(landmarks) {
+  const nose = landmarks[0];
   const leftShoulder = landmarks[11];
   const rightShoulder = landmarks[12];
   const leftElbow = landmarks[13];
@@ -1796,7 +3045,7 @@ function isXPoseGesture(landmarks) {
   const leftHip = landmarks[23];
   const rightHip = landmarks[24];
 
-  const visibility = averageVisibility([leftShoulder, rightShoulder, leftElbow, rightElbow, leftWrist, rightWrist]);
+  const visibility = averageVisibility([nose, leftShoulder, rightShoulder, leftElbow, rightElbow, leftWrist, rightWrist]);
   if (visibility < 0.35) return false;
 
   const shoulderWidth = distance(leftShoulder, rightShoulder) || 0.001;
@@ -1804,25 +3053,43 @@ function isXPoseGesture(landmarks) {
   const shoulderCenterY = (leftShoulder.y + rightShoulder.y) / 2;
   const hipCenterY = (leftHip.y + rightHip.y) / 2;
   const torsoHeight = Math.max(hipCenterY - shoulderCenterY, 0.001);
+  const headAnchorX = Number.isFinite(nose?.x) ? nose.x : shoulderCenterX;
+  const headAnchorY = Number.isFinite(nose?.y) ? nose.y : shoulderCenterY - torsoHeight * 0.55;
+  const headBandTop = headAnchorY - torsoHeight * 0.36;
+  const headBandBottom = shoulderCenterY + torsoHeight * 0.14;
+  const shoulderDepth =
+    (Number.isFinite(leftShoulder.z) ? leftShoulder.z : 0) +
+    (Number.isFinite(rightShoulder.z) ? rightShoulder.z : 0);
+  const wristDepth =
+    (Number.isFinite(leftWrist.z) ? leftWrist.z : 0) +
+    (Number.isFinite(rightWrist.z) ? rightWrist.z : 0);
 
   const wristsNearCenter =
-    Math.abs(leftWrist.x - shoulderCenterX) < shoulderWidth * 0.75 &&
-    Math.abs(rightWrist.x - shoulderCenterX) < shoulderWidth * 0.75;
-  const wristsNearChest =
-    leftWrist.y > shoulderCenterY - torsoHeight * 0.35 &&
-    rightWrist.y > shoulderCenterY - torsoHeight * 0.35 &&
-    leftWrist.y < hipCenterY &&
-    rightWrist.y < hipCenterY;
+    Math.abs(leftWrist.x - shoulderCenterX) < shoulderWidth * 0.62 &&
+    Math.abs(rightWrist.x - shoulderCenterX) < shoulderWidth * 0.62;
+  const wristsNearHead =
+    leftWrist.y >= headBandTop &&
+    rightWrist.y >= headBandTop &&
+    leftWrist.y <= headBandBottom &&
+    rightWrist.y <= headBandBottom &&
+    Math.abs(leftWrist.x - headAnchorX) < shoulderWidth * 0.72 &&
+    Math.abs(rightWrist.x - headAnchorX) < shoulderWidth * 0.72;
   const wristsNearOppositeShoulders =
-    distance(leftWrist, rightShoulder) < shoulderWidth * 1.35 &&
-    distance(rightWrist, leftShoulder) < shoulderWidth * 1.35;
+    distance(leftWrist, rightShoulder) < shoulderWidth * 1.55 &&
+    distance(rightWrist, leftShoulder) < shoulderWidth * 1.55;
   const armsCrossed =
     segmentsIntersect(leftShoulder, leftWrist, rightShoulder, rightWrist) ||
     segmentsIntersect(leftElbow, leftWrist, rightElbow, rightWrist);
-  const wristsCompact = distance(leftWrist, rightWrist) < shoulderWidth * 1.8;
-  const elbowsLifted = leftElbow.y < hipCenterY && rightElbow.y < hipCenterY;
+  const wristsCompact = distance(leftWrist, rightWrist) < shoulderWidth * 1.35;
+  const elbowsLifted =
+    leftElbow.y < shoulderCenterY + torsoHeight * 0.34 &&
+    rightElbow.y < shoulderCenterY + torsoHeight * 0.34;
+  const wristsAheadOfHead =
+    !Number.isFinite(leftWrist.z) ||
+    !Number.isFinite(rightWrist.z) ||
+    wristDepth <= shoulderDepth + 0.16;
 
-  return wristsNearCenter && wristsNearChest && wristsCompact && elbowsLifted && (armsCrossed || wristsNearOppositeShoulders);
+  return wristsNearCenter && wristsNearHead && wristsCompact && elbowsLifted && wristsAheadOfHead && (armsCrossed || wristsNearOppositeShoulders);
 }
 
 function updateXPoseGesture(landmarks) {
@@ -1845,15 +3112,15 @@ function updateXPoseGesture(landmarks) {
   }
 
   const heldFor = poseGestureState.lastSeenAt - poseGestureState.xPoseSince;
-  if (!poseGestureState.stopTriggered && heldFor >= 2000) {
+  if (!poseGestureState.stopTriggered && heldFor >= X_POSE_HOLD_MS) {
     poseGestureState.stopTriggered = true;
-    stopPlayback("X 포즈 인식: 음악 중지");
+    stopPlayback("머리 앞 X 포즈 인식: 음악 중지");
     return;
   }
 
   if (!poseGestureState.stopTriggered) {
-    const secondsLeft = Math.max(1, Math.ceil((2000 - heldFor) / 1000));
-    captureStatus.textContent = `X 포즈 유지 중 · ${secondsLeft}초`;
+    const secondsLeft = Math.max(1, Math.ceil((X_POSE_HOLD_MS - heldFor) / 1000));
+    setCaptureStatusText(`머리 앞 X 포즈 유지 중 · ${secondsLeft}초`);
   }
 }
 
@@ -2006,7 +3273,12 @@ function updateAnalysis(landmarks) {
     cross: analysis.smoothedCross,
     verticality: analysis.smoothedVerticality,
   });
+<<<<<<< HEAD
   pruneLiveBuffer(now);
+=======
+  analysis.liveBuffer = analysis.liveBuffer.filter((sample) => now - sample.time <= analysis.bufferWindowMs);
+  captureSequenceFrame(landmarks, now);
+>>>>>>> codex/front
 
   if (analysis.liveBuffer.length >= 12) {
     updateLiveStyle();
@@ -2041,6 +3313,7 @@ function drawResults(results) {
 async function initPose() {
   if (!window.Pose || !window.Camera) {
     cameraStatus.textContent = "포즈 라이브러리 로드 실패";
+    setLiveIndicator(false);
     return;
   }
 
@@ -2067,18 +3340,31 @@ async function initPose() {
     });
     await camera.start();
     cameraStatus.textContent = "카메라 연결됨";
+    setLiveIndicator(true);
   } catch (error) {
     cameraStatus.textContent = "카메라 권한 거부 또는 연결 실패";
+    setLiveIndicator(false);
     console.error(error);
   }
 }
 
 window.addEventListener("load", async () => {
+  sequenceState.templates = loadSequenceTemplates();
+  updateViewportHeight();
+  setLiveIndicator(false);
+  updateSequenceUi();
   await initPose();
   setEngineUi(false);
-  updateCandidateDisplay("None", "현재 장르 유지 중");
-  speakStatusSafe("대기 중");
+  detectedMood.textContent = INACTIVE_DETECTED_STYLE;
+  setMotionLabel("시퀀스 대기");
+  moodStatus.textContent = "시퀀스 대기";
+  updateCandidateDisplay("없음", "재생 전 대기");
+  speakStatusSafe("시퀀스 대기");
 });
+
+window.addEventListener("resize", updateViewportHeight);
+window.visualViewport?.addEventListener("resize", updateViewportHeight);
+document.fonts?.ready?.then(updateViewportHeight);
 
 captureButton.addEventListener("click", async () => {
   if (playbackState.active || playbackState.pendingStart) return;
@@ -2093,13 +3379,99 @@ captureButton.addEventListener("click", async () => {
   transportState.queuedStyle = DEFAULT_STYLE;
   captureButton.disabled = true;
   setEngineUi(false);
-  detectedMood.textContent = "Analyzing";
-  motionType.textContent = "Observe";
-  moodStatus.textContent = "첫 곡 분석 중 · 4초";
-  updateCandidateDisplay("Analyzing", "첫 곡 분석 중 · 4초");
-  speakStatusSafe("첫 곡 분석 중");
+  detectedMood.textContent = INACTIVE_DETECTED_STYLE;
+  setMotionLabel("시퀀스 대기");
+  moodStatus.textContent = "시퀀스 입력 대기";
+  updateCandidateDisplay("없음", "저장된 시퀀스를 맞춰 주세요");
+  speakStatusSafe("시퀀스 입력 대기");
 });
 
 stopAudioButton.addEventListener("click", () => {
-  stopPlayback("음악 정지됨");
+  stopPlayback();
+});
+
+recordTemplateButton.addEventListener("click", () => {
+  toggleSequenceRecording();
+});
+
+exportTemplatesButton.addEventListener("click", () => {
+  exportSequenceTemplates();
+});
+
+importTemplatesButton.addEventListener("click", () => {
+  templateImportInput.click();
+});
+
+editTemplateButton.addEventListener("click", () => {
+  editSequenceTemplate();
+});
+
+deleteTemplateButton.addEventListener("click", () => {
+  deleteSequenceTemplate();
+});
+
+closeTemplateStudioButton?.addEventListener("click", () => {
+  closeTemplateStudio();
+});
+
+templateFormSecondaryButton?.addEventListener("click", () => {
+  closeTemplateStudio();
+});
+
+templateStudioBackdrop?.addEventListener("click", () => {
+  closeTemplateStudio();
+});
+
+templateForm?.addEventListener("submit", (event) => {
+  handleTemplateStudioSubmit(event);
+});
+
+templateLibraryList?.addEventListener("click", (event) => {
+  handleTemplateLibraryClick(event);
+});
+
+templateImportInput.addEventListener("change", async (event) => {
+  const file = event.target.files?.[0];
+  if (!file) return;
+
+  try {
+    const text = await file.text();
+    mergeImportedTemplates(JSON.parse(text));
+  } catch (error) {
+    console.error(error);
+    openTemplateStudio("edit", getPreferredTemplateId());
+    setTemplateStudioMessage("템플릿 JSON을 읽지 못했습니다.", "error");
+    speakStatusSafe("템플릿 불러오기 실패");
+  } finally {
+    templateImportInput.value = "";
+  }
+});
+
+window.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && templateStudioState.open) {
+    closeTemplateStudio();
+    return;
+  }
+
+  const isSpaceKey = event.code === "Space" || event.key === " " || event.key === "Spacebar";
+  if (!isSpaceKey || event.repeat) {
+    return;
+  }
+
+  if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) {
+    return;
+  }
+
+  if (templateStudioState.open || sequenceState.recording || isKeyboardInputTarget(event.target)) {
+    return;
+  }
+
+  event.preventDefault();
+
+  if (playbackState.active || playbackState.pendingStart) {
+    stopPlayback();
+    return;
+  }
+
+  captureButton.click();
 });
