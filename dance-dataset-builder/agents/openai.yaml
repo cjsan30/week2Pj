@@ -1,0 +1,7 @@
+interface:
+  display_name: "Dance Dataset Builder"
+  short_description: "Build dance datasets and train splits"
+  default_prompt: "Use $dance-dataset-builder to organize local dance clips into a labeled manifest and deterministic train validation test splits."
+
+policy:
+  allow_implicit_invocation: true

@@ -1,0 +1,2 @@
+clip_id,label,source_path,source_type,split,start_sec,end_sec,pose_path,notes
+waltz-img-4941,waltz,data/raw/waltz/IMG_4941.MOV,video,train,,,,
