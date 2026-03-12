@@ -1,4 +1,8 @@
+<<<<<<< HEAD
 # week2Pj
+=======
+
+>>>>>>> 4b8cd7d8b990f395609c76702a03a7b54ba4c9d7
 # The DJ Who Loves Me
 
 ## 프로젝트 소개
