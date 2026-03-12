@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="ko">
   <head>
     <meta charset="UTF-8" />
@@ -14,12 +14,15 @@
       href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700;800&family=Space+Grotesk:wght@400;500;700&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="./styles.css" />
+        <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate" />
+    <meta http-equiv="Pragma" content="no-cache" />
+    <meta http-equiv="Expires" content="0" />
+    <link rel="stylesheet" href="./styles.css?v=20260312-template-sync-1" />
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" defer></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" defer></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose/pose.js" defer></script>
-    <script src="./youtube-library.js" defer></script>
-    <script src="./script.js" defer></script>
+    <script src="./youtube-library.js?v=20260312-template-sync-1" defer></script>
+    <script src="./script.js?v=20260312-template-sync-1" defer></script>
   </head>
   <body>
     <div class="page-shell">
@@ -45,11 +48,13 @@
             <button id="captureButton" class="action-button primary" type="button">실시간 반응 시작</button>
             <button id="stopAudioButton" class="action-button" type="button">음악 정지</button>
             <button id="recordTemplateButton" class="action-button" type="button">시퀀스 기록</button>
-            <button id="exportTemplatesButton" class="action-button" type="button">템플릿 저장</button>
+            <button id="saveTemplatesToProjectButton" class="action-button" type="button">프로젝트 저장 연결</button>
+            <button id="exportTemplatesButton" class="action-button" type="button">템플릿 다운로드</button>
             <button id="importTemplatesButton" class="action-button" type="button">템플릿 불러오기</button>
             <button id="editTemplateButton" class="action-button" type="button">템플릿 수정</button>
             <button id="deleteTemplateButton" class="action-button" type="button">템플릿 삭제</button>
             <div class="chip subtle" id="sequenceStatus">템플릿 0개</div>
+            <div class="chip subtle" id="templateStorageMode">브라우저 저장</div>
             <p class="control-note">팁: 두 팔로 X 포즈를 머리 앞에서 2초 유지하면 즉시 정지됩니다.</p>
           </div>
           <input id="templateImportInput" type="file" accept=".json,application/json" hidden />
@@ -92,46 +97,6 @@
           </div>
         </section>
 
-<<<<<<< HEAD
-        <aside class="sidebar">
-          <section class="panel youtube-panel" id="youtubePanel" hidden>
-            <div class="stage-header">
-              <h2>YouTube Player</h2>
-              <div class="chip subtle" id="playerSource">생성 음악</div>
-            </div>
-            <div class="youtube-frame-wrap">
-              <div id="youtubeFrame"></div>
-            </div>
-          </section>
-
-          <section class="panel">
-            <h2>분석 규칙</h2>
-            <ul class="rules">
-              <li>`실시간 반응 시작`을 누르면 짧은 움직임 버퍼를 계속 분석합니다.</li>
-              <li>판단 기준은 `Energy`, `Bounce`, `Openness`에 이동량·대칭성·팔 높이를 함께 반영합니다.</li>
-              <li>음악은 끊지 않고 다음 마디마다 현재 춤에 맞게 편곡이 바뀝니다.</li>
-              <li>각 스타일은 8마디 구조와 다른 악기 조합으로 전개됩니다.</li>
-              <li>유튜브 링크가 등록된 장르는 랜덤 영상으로 우선 재생됩니다.</li>
-              <li>유튜브 곡이 끝나면 같은 장르의 다음 영상으로 자동 전환됩니다.</li>
-              <li>움직임이 크게 달라지면 스타일과 음악도 함께 갱신됩니다.</li>
-              <li>두 팔로 X자를 만들고 2초 유지하면 음악이 즉시 멈춥니다.</li>
-              <li>`Waltz`: 낮은 에너지, 낮은 바운스, 크게 열린 팔</li>
-              <li>`EDM`: 높은 에너지, 큰 바운스, 크게 터지는 동작</li>
-              <li>`Pop`: 중간 에너지, 중간 바운스, 정돈된 대중적 안무</li>
-            </ul>
-          </section>
-
-          <section class="panel">
-            <h2>사용 팁</h2>
-            <ul class="rules">
-              <li>전신이 카메라에 어느 정도 보여야 안정적입니다.</li>
-              <li>처음 4초는 기준 움직임을 잡는 시간입니다.</li>
-              <li>유튜브 링크는 `youtube-library.js`에 장르별로 넣으면 됩니다.</li>
-              <li>장르는 `Waltz / EDM / Pop` 3개만 구분합니다.</li>
-            </ul>
-          </section>
-        </aside>
-=======
         <section class="youtube-panel" id="youtubePanel" hidden>
           <div class="youtube-panel-head">
             <p class="section-kicker">Playback</p>
@@ -141,7 +106,6 @@
             <div id="youtubeFrame"></div>
           </div>
         </section>
->>>>>>> codex/front
       </main>
 
       <div class="template-studio" id="templateStudio" hidden aria-hidden="true">
@@ -212,3 +176,4 @@
     </div>
   </body>
 </html>
+
